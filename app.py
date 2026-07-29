@@ -4,7 +4,6 @@ from PIL import Image
 from datetime import datetime
 import tempfile
 import os
-from streamlit_clipboard import clipboard_button
 
 st.set_page_config(page_title="멀티플랫폼 AI 콘텐츠 에이전트", layout="wide")
 
@@ -103,26 +102,14 @@ def parse_platform_sections(text):
 
 
 # -------------------------------------------------------------------
-# 클립보드 복사 전용 컴포넌트 함수
+# 원고 상자 렌더링 함수 (복사 버튼 + 줄바꿈 완벽 지원)
 # -------------------------------------------------------------------
-def render_copyable_section(title, content, key_prefix):
-    """실제 작동하는 클립보드 복사 버튼과 텍스트 박스를 함께 표시합니다."""
-    col_btn, col_info = st.columns([2, 8])
-    with col_btn:
-        # streamlit-clipboard 패키지 버튼 사용 (실제 클립보드로 직접 전송)
-        clipboard_button(
-            text=content,
-            button_text=f"📋 {title} 원고 복사",
-            success_text="✅ 복사 완료!",
-            key=f"clip_btn_{key_prefix}"
-        )
+def render_platform_box(title, content):
+    """우측 상단 복사 버튼과 줄바꿈(Word Wrap)이 작동하는 텍스트 상자"""
+    st.caption(f"📋 오른쪽 상단 복사 아이콘(📋)을 누르면 **{title} 원고만** 클립보드에 복사됩니다.")
     
-    st.text_area(
-        label=f"{title} 원고 내용 (수정 및 드래그 가능)",
-        value=content,
-        height=480,
-        key=f"ta_{key_prefix}"
-    )
+    # st.code의 wrap_lines 옵션으로 화면에 맞춘 자동 줄바꿈 적용
+    st.code(content if content else "작성된 내용이 없습니다.", language=None, wrap_lines=True)
 
 
 # -------------------------------------------------------------------
@@ -232,16 +219,16 @@ if api_key:
         ])
 
         with tab1:
-            render_copyable_section("인스타그램", parsed_data["instagram"], "insta")
+            render_platform_box("인스타그램", parsed_data["instagram"])
 
         with tab2:
-            render_copyable_section("네이버 블로그", parsed_data["blog"], "blog")
+            render_platform_box("네이버 블로그", parsed_data["blog"])
 
         with tab3:
-            render_copyable_section("숏폼 스크립트", parsed_data["shortform"], "shortform")
+            render_platform_box("숏폼 스크립트", parsed_data["shortform"])
 
         with tab4:
-            render_copyable_section("오늘의 집", parsed_data["ohou"], "ohou")
+            render_platform_box("오늘의 집", parsed_data["ohou"])
 
         with tab5:
             st.markdown(st.session_state.generated_result)
