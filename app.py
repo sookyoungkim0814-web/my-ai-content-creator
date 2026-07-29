@@ -1,156 +1,104 @@
-import streamlit as st
-import google.generativeai as genai
+import os
+from google import genai
+from google.genai import types
 
-# 1. 페이지 기본 설정 및 디자인 스타일링
-st.set_page_config(page_title="Multi-Platform AI Content Agent", layout="wide")
+# 1. Gemini API 클라이언트 초기화
+# 환경변수 GOOGLE_API_KEY가 설정되어 있어야 합니다.
+# export GOOGLE_API_KEY="your-api-key"
+client = genai.Client()
 
-st.markdown("""
-    <style>
-    .main-title { font-size: 2.2rem; font-weight: 700; color: #1E293B; margin-bottom: 0.5rem; }
-    .sub-title { font-size: 1rem; color: #64748B; margin-bottom: 2rem; }
-    .card { background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
-    </style>
-""", unsafe_allow_html=True)
-
-st.markdown('<div class="main-title">🎥 인플루언서 올인원 AI 에이전트</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-title">사진/영상과 소스를 업로드하면 각 플랫폼 감성에 맞춰 콘텐츠를 자동으로 생성합니다.</div>', unsafe_allow_html=True)
-
-# 2. API 키 입력 및 설정
-with st.sidebar:
-    st.header("🔑 API 설정")
-    api_key = st.text_input("Gemini API Key를 입력하세요", type="password")
-    st.caption("※ 최신 Gemini 1.5 Flash (v3.6 FLASH 대응) 모델을 사용합니다.")
-
-if not api_key:
-    st.info("시작하려면 좌측 사이드바에 Gemini API Key를 입력해 주세요.")
-    st.stop()
-
-genai.configure(api_key=api_key)
-
-# 3. 사용자 입력 섹션
-col_input1, col_input2 = st.columns([1, 1])
-
-with col_input1:
-    topic = st.text_input("📌 콘텐츠 주제 / 키워드", placeholder="예: 줄즈 에어2 유모차 + 다이치 바구니 카시트 내돈내산 후기")
-    context_text = st.text_area("📝 상세 경험 및 핵심 내용 입력", placeholder="구매처, 실제 사용 경험, 장단점, 꿀팁 등 자세하게 적어주세요.", height=200)
-
-with col_input2:
-    uploaded_files = st.file_uploader("🖼️ 사진 및 동영상 첨부 (감성/분위기 참조용)", accept_multiple_files=True, type=['png', 'jpg', 'jpeg', 'mp4'])
-
-# 복사 기능 구동을 위한 Helper 함수
-def render_copyable_content(title, content, element_id):
-    st.subheader(title)
-    
-    # 텍스트 영역 표시
-    st.text_area(label=f"{title} 내용", value=content, height=250, key=f"text_{element_id}", label_visibility="collapsed")
-    
-    # JavaScript 기반 클립보드 복사 버튼
-    escaped_content = content.replace("`", "\\`").replace("$", "\\$").replace("\n", "\\n")
-    copy_code = f"""
-        <button id="btn_{element_id}" onclick="copyToClipboard_{element_id}()" style="
-            background-color: #4F46E5; color: white; border: none; padding: 8px 16px;
-            border-radius: 6px; cursor: pointer; font-weight: bold; margin-bottom: 15px;">
-            📋 {title} 전체 복사하기
-        </button>
-        <script>
-        function copyToClipboard_{element_id}() {{
-            const text = `{escaped_content}`;
-            navigator.clipboard.writeText(text).then(function() {{
-                const btn = document.getElementById('btn_{element_id}');
-                btn.innerText = '✅ 복사 완료!';
-                setTimeout(() => {{ btn.innerText = '📋 {title} 전체 복사하기'; }}, 2000);
-            }});
-        }}
-        </script>
+# 2. 멀티플랫폼 콘텐츠 생성 함수 Definition
+def generate_multi_platform_content(topic: str, media_paths: list[str] = None):
     """
-    st.components.v1.html(copy_code, height=50)
+    주제(topic)와 사진/동영상 파일 목록(media_paths)을 전달받아
+    인스타그램, 네이버 블로그, 숏폼(릴스/클립/쇼츠), 오늘의 집 가이드에 맞는 
+    콘텐츠 결과를 생성합니다.
+    """
+    
+    # AI 에이전트 페르소나 및 플랫폼별 가이드라인 프롬프트 설정
+    system_instruction = """
+    당신은 육아, 라이프스타일, 인테리어 분야에 특화된 전문 만능 인플루언서 AI 에이전트입니다.
+    사용자가 제공한 주제와 사진/동영상의 분위기, 감성을 완벽하게 파악하여 
+    각 플랫폼별 특성에 들어맞는 최적의 콘텐츠 프레임을 생성해 주세요.
 
-# 4. 콘텐츠 생성 프로세스
-if st.button("🚀 모든 플랫폼 콘텐츠 일괄 생성하기", type="primary", use_container_width=True):
-    if not topic or not context_text:
-        st.warning("주제와 상세 경험 내용을 입력해 주세요!")
-        st.stop()
-        
-    with st.spinner("AI가 멀티 플랫폼 맞춤형 글을 생성 중입니다..."):
-        try:
-            # Gemini 1.5 Flash 모델 설정 (v3.6 FLASH 대응)
-            model = genai.GenerativeModel('gemini-1.5-flash')
-            
-            # 첨부된 미디어 처리
-            media_prompts = []
-            if uploaded_files:
-                for file in uploaded_files:
-                    if file.type.startswith('image'):
-                        media_prompts.append({"mime_type": file.type, "data": file.getvalue()})
+    [플랫폼별 작성 가이드라인]
+    1. 인스타그램 (Feed & Reels Caption)
+       - 특유의 감성적이고 정돈된 톤앤매너, 적절한 이모지 사용
+       - 공감대를 형성하는 문장과 줄바꿈
+       - 검색 및 노출에 최적화된 해시태그 목록 (#육아템 #휴대용유모차 등)
 
-            # 프롬프트 구성
-            prompt = f"""
-            당신은 인스타그램, 네이버 블로그, 숏폼(릴스/클립), 오늘의 집 등을 정복한 전문 인플루언서 콘텐츠 에이전트입니다.
-            아래 전달받은 [주제]와 [상세 경험] 및 첨부된 사진/영상 분위기를 참고하여 각 플랫폼 규격에 맞춘 최적의 글을 작성하세요.
+    2. 네이버 블로그
+       - 진정성 있는 내돈내산/실제 경험 위주의 가독성 높은 어조 (~했는데요!, ~입니다)
+       - 헤더/소제목 구분 및 항목별 꿀팁/장단점 정리
+       - [추가 추천 요소]: 글 작성 시 추가로 첨부하면 좋을 사진 각도, 매장 지도, 관련 팁 아이디어 제시
 
-            [주제]: {topic}
-            [상세 경험 및 원본 데이터]: {context_text}
+    3. 숏폼 콘텐츠 (인스타그램 릴스 / 네이버 클립 / 유튜브 쇼츠)
+       - 시청자를 사로잡는 강력한 후킹 멘트 (상단 자막용)
+       - 15~30초 분량의 씬(Scene)별 구성안 및 오디오/나레이션 스크립트
 
-            ---
+    4. 오늘의 집 (Story / O-House Feed)
+       - 공간과 어우러지는 감성적인 인테리어/라이프스타일 톤
+       - 유용한 육아/집꾸미기 정보 공유 스타일
+    """
 
-            ### 1. 네이버 블로그 (Blog)
-            - **톤앤매너**: 경험 위주의 친근하고 꼼꼼한 솔직 후기 스타일 (예: 초보맘, 일상 블로거 다정한 말투).
-            - **이모지**: 글 전반에 다채롭고 풍성하게 이모지를 추가하여 가독성과 감성을 높여주세요 💖✨👶🛍️.
-            - **제약사항**: 각 꼭지나 단락 사이에 절대로 가로줄(--- 또는 <hr>)을 넣지 마세요. 깔끔한 소제목과 공백으로만 구분하세요.
-            - **구성**:
-              - 자연스러운 제목
-              - 도입부 인사 및 고민 과정
-              - [장점/특징] 세부 단락 (이모지 소제목 활용)
-              - 추가로 첨부하면 좋을 사진/내용 제안 (예: [📸 사진 추천: ~하는 모습])
-              - 마무리 요약 및 이웃 유도 멘트
+    # 이미지/동영상 및 텍스트 프롬프트 구성
+    contents = []
+    
+    # 미디어 파일 업로드 및 프롬프트 첨부
+    if media_paths:
+        for path in media_paths:
+            if os.path.exists(path):
+                print(f"미디어 파일 업로드 중: {path}")
+                uploaded_file = client.files.upload(file=path)
+                contents.append(uploaded_file)
+            else:
+                print(f"경고: 파일을 찾을 수 없습니다 -> {path}")
 
-            ### 2. 인스타그램 피드 (Instagram Feed)
-            - **톤앤매너**: 인스타 특유의 트렌디하고 감성적인 말투, 한눈에 들어오는 가독성.
-            - **구성**: 
-              - 감성적인 첫 줄 후킹 멘트
-              - 간결하고 위트 있는 본문 및 적절한 이모지 조합
-              - 핵심 해시태그 15~20개 포함 (#육아템 #내돈내산 등)
+    # 사용자 요구사항 텍스트 프롬프트
+    prompt_text = f"""
+    [요청 주제 및 내용]
+    {topic}
 
-            ### 3. 인스타그램 릴스 / 네이버 클립 (Shorts Video Script)
-            - **목적**: 15~30초 이내 시청자 시선을 사로잡는 숏폼 대본.
-            - **구성**:
-              - 3초 이내 이탈을 막는 초강력 **후킹 멘트** (텍스트 자막용)
-              - 숏폼 영상 구성안 (시각적 연출 지시어 + 나레이션/자막)
-              - 시청자가 댓글을 남기게 만드는 반응 유도 멘트 (CTA)
+    위 전달된 이미지/동영상 파일들의 감성과 분위기, 그리고 주제를 바탕으로 
+    인스타그램, 네이버 블로그, 숏폼(릴스/클립/쇼츠), 오늘의 집 플랫폼 맞춤형 원고 및 대본을 생성해 주세요.
+    """
+    contents.append(prompt_text)
 
-            ### 4. 오늘의 집 (House Today)
-            - **톤앤매너**: 공간, 인테리어, 라이프스타일과 자연스럽게 어우러지는 톤.
-            - **구성**:
-              - 공간감과 제품의 실용성을 подчер키하는 내돈내산 스타일 소개
-              - 사용 팁 및 배치 스타일링 추천
+    print("\nGemini AI 에이전트가 콘텐츠를 생성 중입니다...\n")
 
-            각 플랫폼별 내용을 명확히 구분하여 작성해 주세요.
-            """
+    # 최신 SDK 기준 Gemini 모델 호출 (gemini-2.5-flash)
+    response = client.models.generate_content(
+        model="gemini-2.5-flash",
+        contents=contents,
+        config=types.GenerateContentConfig(
+            system_instruction=system_instruction,
+            temperature=0.7,
+        )
+    )
 
-            # AI 생성 호출
-            response = model.generate_content([prompt, *media_prompts])
-            result_text = response.text
+    return response.text
 
-            # 결과 분할 및 출력 파싱
-            st.success("🎉 모든 플랫폼 맞춤형 콘텐츠 작성이 완료되었습니다!")
-            
-            # 파싱용 구분 (임의 파싱 및 섹션 출력)
-            st.divider()
-            
-            # 탭 형태로 결과 제공 + 각각 복사 버튼 제공
-            tab1, tab2, tab3, tab4 = st.tabs(["📝 네이버 블로그", "📸 인스타그램 피드", "🎬 릴스 / 클립 (숏폼)", "🏠 오늘의 집"])
+# 3. 실행 예시
+if __name__ == "__main__":
+    # 작성하고자 하는 콘텐츠 주제
+    user_topic = """
+    베이비하우스 마곡점에서 직접 비교해보고 내돈내산으로 구매한 '줄즈 에어2' 휴대용 유모차와 
+    '다이치' 바구니 카시트 트래블 시스템 조합 실사용 후기.
+    - 온누리상품권 10% 할인 팁
+    - 한 손 이지폴딩 및 기내반입 가벼움
+    - 바구니 카시트 결합의 편리함과 스무스한 핸들링 장점
+    - 범퍼바 별도구매 및 등받이 각도 아쉬운 점 정리
+    """
+    
+    # 참고할 미디어 파일 경로 목록 (예시)
+    sample_media = [
+        # "stroller_image1.jpg",
+        # "stroller_video1.mp4"
+    ]
 
-            with tab1:
-                render_copyable_content("네이버 블로그 포스팅", result_text, "blog")
-                
-            with tab2:
-                render_copyable_content("인스타그램 피드", result_text, "insta")
-
-            with tab3:
-                render_copyable_content("릴스 / 네이버 클립 대본", result_text, "reels")
-
-            with tab4:
-                render_copyable_content("오늘의 집 스타일", result_text, "today_house")
-
-        except Exception as e:
-            st.error(f"콘텐츠 생성 중 오류가 발생했습니다: {e}")
+    result = generate_multi_platform_content(topic=user_topic, media_paths=sample_media)
+    
+    print("=" * 50)
+    print("✨ AI 에이전트 플랫폼별 최종 결과물 ✨")
+    print("=" * 50)
+    print(result)
