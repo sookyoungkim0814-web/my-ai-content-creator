@@ -4,6 +4,7 @@ from PIL import Image
 from datetime import datetime
 import tempfile
 import os
+from streamlit_clipboard import clipboard_button
 
 st.set_page_config(page_title="멀티플랫폼 AI 콘텐츠 에이전트", layout="wide")
 
@@ -105,25 +106,21 @@ def parse_platform_sections(text):
 # 클립보드 복사 전용 컴포넌트 함수
 # -------------------------------------------------------------------
 def render_copyable_section(title, content, key_prefix):
-    """복사 버튼과 가독성 높은 텍스트 박스를 함께 표시합니다."""
-    col_btn, col_space = st.columns([2, 8])
+    """실제 작동하는 클립보드 복사 버튼과 텍스트 박스를 함께 표시합니다."""
+    col_btn, col_info = st.columns([2, 8])
     with col_btn:
-        # Streamlit 컴포넌트를 이용한 클립보드 복사 처리
-        if st.button(f"📋 {title} 원고 전체 복사", key=f"btn_{key_prefix}"):
-            st.components.v1.html(
-                f"""
-                <script>
-                navigator.clipboard.writeText({repr(content)});
-                </script>
-                """,
-                height=0
-            )
-            st.toast(f"✅ {title} 원고가 클립보드에 복사되었습니다!")
+        # streamlit-clipboard 패키지 버튼 사용 (실제 클립보드로 직접 전송)
+        clipboard_button(
+            text=content,
+            button_text=f"📋 {title} 원고 복사",
+            success_text="✅ 복사 완료!",
+            key=f"clip_btn_{key_prefix}"
+        )
     
     st.text_area(
-        label=f"{title} 원고 내용",
+        label=f"{title} 원고 내용 (수정 및 드래그 가능)",
         value=content,
-        height=500,
+        height=480,
         key=f"ta_{key_prefix}"
     )
 
