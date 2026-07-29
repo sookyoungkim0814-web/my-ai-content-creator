@@ -4,7 +4,6 @@ from PIL import Image
 from datetime import datetime
 import tempfile
 import os
-import re
 
 st.set_page_config(page_title="멀티플랫폼 AI 콘텐츠 에이전트", layout="wide")
 
@@ -51,10 +50,10 @@ else:
 
 
 # -------------------------------------------------------------------
-# 텍스트 파싱 함수 (플랫폼별 탭 분리를 위함)
+# 텍스트 파싱 함수 (안전한 키워드 기반 구분)
 # -------------------------------------------------------------------
 def parse_platform_sections(text):
-    """생성된 원고 텍스트를 각 플랫폼 섹션별로 분리합니다."""
+    """생성된 전체 원고에서 각 플랫폼별 텍스트를 안정적으로 분리합니다."""
     sections = {
         "instagram": "",
         "blog": "",
@@ -62,17 +61,44 @@ def parse_platform_sections(text):
         "ohou": ""
     }
     
-    # 정규표현식을 활용한 섹션 분할
-    insta_match = re.search(r"### 1\. 인스타그램 피드\n(.*?)(?=### 2\. 네이버 블로그|$)", text, re.DOTALL)
-    blog_match = re.search(r"### 2\. 네이버 블로그.*?\n(.*?)(?=### 3\. 숏폼 스크립트|$)", text, re.DOTALL)
-    short_match = re.search(r"### 3\. 숏폼 스크립트.*?\n(.*?)(?=### 4\. 오늘의 집|$)", text, re.DOTALL)
-    ohou_match = re.search(r"### 4\. 오늘의 집\n(.*?)$", text, re.DOTALL)
-    
-    sections["instagram"] = insta_match.group(1).strip() if insta_match else ""
-    sections["blog"] = blog_match.group(1).strip() if blog_match else ""
-    sections["shortform"] = short_match.group(1).strip() if short_match else ""
-    sections["ohou"] = ohou_match.group(1).strip() if ohou_match else ""
-    
+    if not text:
+        return sections
+
+    # 각 섹션의 시작 위치 탐색을 위한 키워드
+    k_insta = "1. 인스타그램"
+    k_blog = "2. 네이버 블로그"
+    k_short = "3. 숏폼"
+    k_ohou = "4. 오늘의"
+
+    idx_insta = text.find(k_insta)
+    idx_blog = text.find(k_blog)
+    idx_short = text.find(k_short)
+    idx_ohou = text.find(k_ohou)
+
+    # 1. 인스타그램
+    if idx_insta != -1:
+        end_idx = idx_blog if idx_blog != -1 else len(text)
+        sections["instagram"] = text[idx_insta:end_idx].strip()
+
+    # 2. 네이버 블로그
+    if idx_blog != -1:
+        end_idx = idx_short if idx_short != -1 else len(text)
+        sections["blog"] = text[idx_blog:end_idx].strip()
+
+    # 3. 숏폼 스크립트
+    if idx_short != -1:
+        end_idx = idx_ohou if idx_ohou != -1 else len(text)
+        sections["shortform"] = text[idx_short:end_idx].strip()
+
+    # 4. 오늘의 집
+    if idx_ohou != -1:
+        sections["ohou"] = text[idx_ohou:].strip()
+
+    # 분리 실패 시 전체 텍스트 fallback
+    for k in sections:
+        if not sections[k]:
+            sections[k] = text
+
     return sections
 
 
@@ -150,7 +176,7 @@ if api_key:
                 try:
                     input_data = [prompt] + media_inputs
                     response = client.models.generate_content(
-                        model='gemini-3.6-flash',
+                        model='gemini-2.0-flash',
                         contents=input_data
                     )
 
@@ -173,7 +199,7 @@ if api_key:
         # 섹션별 텍스트 파싱
         parsed_data = parse_platform_sections(st.session_state.generated_result)
 
-        # 플랫폼별 탭 구성 (복사 기능 편의성 대폭 향상)
+        # 플랫폼별 탭 구성 (복사 가능 + 자동 줄바꿈 + 표준 폰트)
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "📸 인스타그램", 
             "📝 네이버 블로그", 
@@ -183,20 +209,20 @@ if api_key:
         ])
 
         with tab1:
-            st.caption("💡 오른쪽 상단 복사 버튼(📋)을 클릭하면 인스타그램 원고만 복사됩니다.")
-            st.code(parsed_data["instagram"] if parsed_data["instagram"] else "내용이 없습니다.", language=None)
+            st.caption("📋 오른쪽 상단 버튼을 눌러 인스타그램 원고를 간편하게 복사하세요.")
+            st.text_area("인스타그램 원고", parsed_data["instagram"], height=450, key="ta_insta")
 
         with tab2:
-            st.caption("💡 오른쪽 상단 복사 버튼(📋)을 클릭하면 블로그 원고만 복사됩니다.")
-            st.code(parsed_data["blog"] if parsed_data["blog"] else "내용이 없습니다.", language=None)
+            st.caption("📋 오른쪽 상단 버튼을 눌러 네이버 블로그 원고를 간편하게 복사하세요.")
+            st.text_area("네이버 블로그 원고", parsed_data["blog"], height=550, key="ta_blog")
 
         with tab3:
-            st.caption("💡 오른쪽 상단 복사 버튼(📋)을 클릭하면 숏폼 스크립트만 복사됩니다.")
-            st.code(parsed_data["shortform"] if parsed_data["shortform"] else "내용이 없습니다.", language=None)
+            st.caption("📋 오른쪽 상단 버튼을 눌러 숏폼 스크립트를 간편하게 복사하세요.")
+            st.text_area("숏폼 스크립트 원고", parsed_data["shortform"], height=450, key="ta_shortform")
 
         with tab4:
-            st.caption("💡 오른쪽 상단 복사 버튼(📋)을 클릭하면 오늘의집 원고만 복사됩니다.")
-            st.code(parsed_data["ohou"] if parsed_data["ohou"] else "내용이 없습니다.", language=None)
+            st.caption("📋 오른쪽 상단 버튼을 눌러 오늘의집 원고를 간편하게 복사하세요.")
+            st.text_area("오늘의집 원고", parsed_data["ohou"], height=450, key="ta_ohou")
 
         with tab5:
             st.markdown(st.session_state.generated_result)
@@ -250,7 +276,7 @@ if api_key:
                         {st.session_state.generated_result}
                         """
                         response = client.models.generate_content(
-                            model='gemini-3.6-flash',
+                            model='gemini-2.0-flash',
                             contents=refine_prompt
                         )
                         st.session_state.generated_result = response.text
