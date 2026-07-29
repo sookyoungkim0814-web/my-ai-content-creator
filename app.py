@@ -50,69 +50,6 @@ else:
 
 
 # -------------------------------------------------------------------
-# 텍스트 파싱 함수 (안전한 키워드 기반 구분)
-# -------------------------------------------------------------------
-def parse_platform_sections(text):
-    """생성된 전체 원고에서 각 플랫폼별 텍스트를 안정적으로 분리합니다."""
-    sections = {
-        "instagram": "",
-        "blog": "",
-        "shortform": "",
-        "ohou": ""
-    }
-    
-    if not text:
-        return sections
-
-    k_insta = "1. 인스타그램"
-    k_blog = "2. 네이버 블로그"
-    k_short = "3. 숏폼"
-    k_ohou = "4. 오늘의"
-
-    idx_insta = text.find(k_insta)
-    idx_blog = text.find(k_blog)
-    idx_short = text.find(k_short)
-    idx_ohou = text.find(k_ohou)
-
-    # 1. 인스타그램
-    if idx_insta != -1:
-        end_idx = idx_blog if idx_blog != -1 else len(text)
-        sections["instagram"] = text[idx_insta:end_idx].strip()
-
-    # 2. 네이버 블로그
-    if idx_blog != -1:
-        end_idx = idx_short if idx_short != -1 else len(text)
-        sections["blog"] = text[idx_blog:end_idx].strip()
-
-    # 3. 숏폼 스크립트
-    if idx_short != -1:
-        end_idx = idx_ohou if idx_ohou != -1 else len(text)
-        sections["shortform"] = text[idx_short:end_idx].strip()
-
-    # 4. 오늘의 집
-    if idx_ohou != -1:
-        sections["ohou"] = text[idx_ohou:].strip()
-
-    # 분리 실패 시 전체 텍스트 fallback
-    for k in sections:
-        if not sections[k]:
-            sections[k] = text
-
-    return sections
-
-
-# -------------------------------------------------------------------
-# 원고 상자 렌더링 함수 (복사 버튼 + 줄바꿈 완벽 지원)
-# -------------------------------------------------------------------
-def render_platform_box(title, content):
-    """우측 상단 복사 버튼과 줄바꿈(Word Wrap)이 작동하는 텍스트 상자"""
-    st.caption(f"📋 오른쪽 상단 복사 아이콘(📋)을 누르면 **{title} 원고만** 클립보드에 복사됩니다.")
-    
-    # st.code의 wrap_lines 옵션으로 화면에 맞춘 자동 줄바꿈 적용
-    st.code(content if content else "작성된 내용이 없습니다.", language=None, wrap_lines=True)
-
-
-# -------------------------------------------------------------------
 # 메인화면: 입력폼
 # -------------------------------------------------------------------
 if api_key:
@@ -200,38 +137,14 @@ if api_key:
                             os.remove(tmp_path)
 
     # -------------------------------------------------------------------
-    # 결과물 표시 및 개별 복사 / 히스토리 저장 관리
+    # 결과물 표시 및 히스토리 저장 관리
     # -------------------------------------------------------------------
     if st.session_state.generated_result:
         st.markdown("---")
-        st.subheader("✨ 생성된 원고 결과물")
-
-        # 섹션별 텍스트 파싱
-        parsed_data = parse_platform_sections(st.session_state.generated_result)
-
-        # 플랫폼별 탭 구성
-        tab1, tab2, tab3, tab4, tab5 = st.tabs([
-            "📸 인스타그램", 
-            "📝 네이버 블로그", 
-            "🎬 숏폼 스크립트", 
-            "🏠 오늘의 집", 
-            "📄 전체 원고 보기"
-        ])
-
-        with tab1:
-            render_platform_box("인스타그램", parsed_data["instagram"])
-
-        with tab2:
-            render_platform_box("네이버 블로그", parsed_data["blog"])
-
-        with tab3:
-            render_platform_box("숏폼 스크립트", parsed_data["shortform"])
-
-        with tab4:
-            render_platform_box("오늘의 집", parsed_data["ohou"])
-
-        with tab5:
-            st.markdown(st.session_state.generated_result)
+        st.subheader("📄 전체 원고 결과물")
+        
+        # 전체 원고 화면 표출
+        st.markdown(st.session_state.generated_result)
 
         st.markdown("---")
         col1, col2 = st.columns(2)
