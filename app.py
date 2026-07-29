@@ -176,7 +176,7 @@ if api_key:
                 try:
                     input_data = [prompt] + media_inputs
                     response = client.models.generate_content(
-                        model='gemini-2.0-flash',
+                        model='gemini-3.6-flash',
                         contents=input_data
                     )
 
@@ -276,7 +276,7 @@ if api_key:
                         {st.session_state.generated_result}
                         """
                         response = client.models.generate_content(
-                            model='gemini-2.0-flash',
+                            model='gemini-3.6-flash',
                             contents=refine_prompt
                         )
                         st.session_state.generated_result = response.text
