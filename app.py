@@ -64,7 +64,6 @@ def parse_platform_sections(text):
     if not text:
         return sections
 
-    # 각 섹션의 시작 위치 탐색을 위한 키워드
     k_insta = "1. 인스타그램"
     k_blog = "2. 네이버 블로그"
     k_short = "3. 숏폼"
@@ -100,6 +99,33 @@ def parse_platform_sections(text):
             sections[k] = text
 
     return sections
+
+
+# -------------------------------------------------------------------
+# 클립보드 복사 전용 컴포넌트 함수
+# -------------------------------------------------------------------
+def render_copyable_section(title, content, key_prefix):
+    """복사 버튼과 가독성 높은 텍스트 박스를 함께 표시합니다."""
+    col_btn, col_space = st.columns([2, 8])
+    with col_btn:
+        # Streamlit 컴포넌트를 이용한 클립보드 복사 처리
+        if st.button(f"📋 {title} 원고 전체 복사", key=f"btn_{key_prefix}"):
+            st.components.v1.html(
+                f"""
+                <script>
+                navigator.clipboard.writeText({repr(content)});
+                </script>
+                """,
+                height=0
+            )
+            st.toast(f"✅ {title} 원고가 클립보드에 복사되었습니다!")
+    
+    st.text_area(
+        label=f"{title} 원고 내용",
+        value=content,
+        height=500,
+        key=f"ta_{key_prefix}"
+    )
 
 
 # -------------------------------------------------------------------
@@ -199,7 +225,7 @@ if api_key:
         # 섹션별 텍스트 파싱
         parsed_data = parse_platform_sections(st.session_state.generated_result)
 
-        # 플랫폼별 탭 구성 (복사 가능 + 자동 줄바꿈 + 표준 폰트)
+        # 플랫폼별 탭 구성
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "📸 인스타그램", 
             "📝 네이버 블로그", 
@@ -209,20 +235,16 @@ if api_key:
         ])
 
         with tab1:
-            st.caption("📋 오른쪽 상단 버튼을 눌러 인스타그램 원고를 간편하게 복사하세요.")
-            st.text_area("인스타그램 원고", parsed_data["instagram"], height=450, key="ta_insta")
+            render_copyable_section("인스타그램", parsed_data["instagram"], "insta")
 
         with tab2:
-            st.caption("📋 오른쪽 상단 버튼을 눌러 네이버 블로그 원고를 간편하게 복사하세요.")
-            st.text_area("네이버 블로그 원고", parsed_data["blog"], height=550, key="ta_blog")
+            render_copyable_section("네이버 블로그", parsed_data["blog"], "blog")
 
         with tab3:
-            st.caption("📋 오른쪽 상단 버튼을 눌러 숏폼 스크립트를 간편하게 복사하세요.")
-            st.text_area("숏폼 스크립트 원고", parsed_data["shortform"], height=450, key="ta_shortform")
+            render_copyable_section("숏폼 스크립트", parsed_data["shortform"], "shortform")
 
         with tab4:
-            st.caption("📋 오른쪽 상단 버튼을 눌러 오늘의집 원고를 간편하게 복사하세요.")
-            st.text_area("오늘의집 원고", parsed_data["ohou"], height=450, key="ta_ohou")
+            render_copyable_section("오늘의 집", parsed_data["ohou"], "ohou")
 
         with tab5:
             st.markdown(st.session_state.generated_result)
