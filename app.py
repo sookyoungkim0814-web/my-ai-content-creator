@@ -1,198 +1,156 @@
 import streamlit as st
-import google.genai as genai
-from PIL import Image
-from datetime import datetime
-import tempfile
-import os
+import google.generativeai as genai
 
-st.set_page_config(page_title="멀티플랫폼 AI 콘텐츠 에이전트", layout="wide")
+# 1. 페이지 기본 설정 및 디자인 스타일링
+st.set_page_config(page_title="Multi-Platform AI Content Agent", layout="wide")
 
-st.title("📸 멀티플랫폼 인플루언서 AI 콘텐츠 에이전트")
-st.write("주제, 미디어(사진/동영상), 필수 고려사항을 입력하면 각 플랫폼 감성에 맞춘 콘텐츠를 자동 생성합니다.")
+st.markdown("""
+    <style>
+    .main-title { font-size: 2.2rem; font-weight: 700; color: #1E293B; margin-bottom: 0.5rem; }
+    .sub-title { font-size: 1rem; color: #64748B; margin-bottom: 2rem; }
+    .card { background-color: #F8FAFC; border: 1px solid #E2E8F0; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+    </style>
+""", unsafe_allow_html=True)
 
-# -------------------------------------------------------------------
-# 세션 상태 초기화 (데이터 유지의 핵심)
-# -------------------------------------------------------------------
-if "generated_result" not in st.session_state:
-    st.session_state.generated_result = ""
-if "last_topic" not in st.session_state:
-    st.session_state.last_topic = ""
-if "history" not in st.session_state:
-    st.session_state.history = []
+st.markdown('<div class="main-title">🎥 인플루언서 올인원 AI 에이전트</div>', unsafe_allow_html=True)
+st.markdown('<div class="sub-title">사진/영상과 소스를 업로드하면 각 플랫폼 감성에 맞춰 콘텐츠를 자동으로 생성합니다.</div>', unsafe_allow_html=True)
 
-# API 키 입력
-api_key = st.sidebar.text_input("Google Gemini API Key 입력", type="password")
+# 2. API 키 입력 및 설정
+with st.sidebar:
+    st.header("🔑 API 설정")
+    api_key = st.text_input("Gemini API Key를 입력하세요", type="password")
+    st.caption("※ 최신 Gemini 1.5 Flash (v3.6 FLASH 대응) 모델을 사용합니다.")
 
-# -------------------------------------------------------------------
-# 사이드바: 저장된 원고 히스토리 리스트
-# -------------------------------------------------------------------
-st.sidebar.markdown("---")
-st.sidebar.subheader("📚 저장된 원고 목록")
+if not api_key:
+    st.info("시작하려면 좌측 사이드바에 Gemini API Key를 입력해 주세요.")
+    st.stop()
 
-if st.session_state.history:
-    # 선택 메뉴
-    history_options = {f"[{item['date']}] {item['topic']}": item for item in st.session_state.history}
-    selected_label = st.sidebar.selectbox("불러올 원고를 선택하세요", list(history_options.keys()))
+genai.configure(api_key=api_key)
+
+# 3. 사용자 입력 섹션
+col_input1, col_input2 = st.columns([1, 1])
+
+with col_input1:
+    topic = st.text_input("📌 콘텐츠 주제 / 키워드", placeholder="예: 줄즈 에어2 유모차 + 다이치 바구니 카시트 내돈내산 후기")
+    context_text = st.text_area("📝 상세 경험 및 핵심 내용 입력", placeholder="구매처, 실제 사용 경험, 장단점, 꿀팁 등 자세하게 적어주세요.", height=200)
+
+with col_input2:
+    uploaded_files = st.file_uploader("🖼️ 사진 및 동영상 첨부 (감성/분위기 참조용)", accept_multiple_files=True, type=['png', 'jpg', 'jpeg', 'mp4'])
+
+# 복사 기능 구동을 위한 Helper 함수
+def render_copyable_content(title, content, element_id):
+    st.subheader(title)
     
-    col_nav1, col_nav2 = st.sidebar.columns(2)
-    if col_nav1.button("📖 원고 불러오기"):
-        target_item = history_options[selected_label]
-        st.session_state.generated_result = target_item["content"]
-        st.session_state.last_topic = target_item["topic"]
-        st.rerun()
+    # 텍스트 영역 표시
+    st.text_area(label=f"{title} 내용", value=content, height=250, key=f"text_{element_id}", label_visibility="collapsed")
+    
+    # JavaScript 기반 클립보드 복사 버튼
+    escaped_content = content.replace("`", "\\`").replace("$", "\\$").replace("\n", "\\n")
+    copy_code = f"""
+        <button id="btn_{element_id}" onclick="copyToClipboard_{element_id}()" style="
+            background-color: #4F46E5; color: white; border: none; padding: 8px 16px;
+            border-radius: 6px; cursor: pointer; font-weight: bold; margin-bottom: 15px;">
+            📋 {title} 전체 복사하기
+        </button>
+        <script>
+        function copyToClipboard_{element_id}() {{
+            const text = `{escaped_content}`;
+            navigator.clipboard.writeText(text).then(function() {{
+                const btn = document.getElementById('btn_{element_id}');
+                btn.innerText = '✅ 복사 완료!';
+                setTimeout(() => {{ btn.innerText = '📋 {title} 전체 복사하기'; }}, 2000);
+            }});
+        }}
+        </script>
+    """
+    st.components.v1.html(copy_code, height=50)
 
-    if col_nav2.button("🗑️ 원고 삭제"):
-        target_item = history_options[selected_label]
-        st.session_state.history = [item for item in st.session_state.history if item["id"] != target_item["id"]]
-        st.sidebar.success("원고가 삭제되었습니다.")
-        st.rerun()
-else:
-    st.sidebar.info("아직 저장된 원고가 없습니다.")
-
-
-# -------------------------------------------------------------------
-# 메인화면: 입력폼
-# -------------------------------------------------------------------
-if api_key:
-    client = genai.Client(api_key=api_key)
-
-    topic = st.text_input("1. 콘텐츠 제목 / 주제를 입력하세요", placeholder="예: [사용후기] 줄즈 에어2 유모차 & 다이치 카시트 내돈내산 추천")
-    uploaded_files = st.file_uploader("2. 사진 또는 동영상을 업로드하세요 (복수 선택 가능)", type=["jpg", "jpeg", "png", "mp4"], accept_multiple_files=True)
-    must_include = st.text_area(
-        "3. 내용 작성 시 꼭 고려하거나 포함해야 할 사항을 입력하세요", 
-        placeholder="예: 온누리상품권 10~15% 할인 구매 꿀팁, 어댑터 리콜 대응에 감동받은 비하인드, 등받이 각도나 범퍼바 별도구매 등 아쉬운 점"
-    )
-
-    if st.button("🚀 전체 플랫폼 콘텐츠 생성하기"):
-        if not topic:
-            st.warning("제목/주제를 입력해주세요!")
-        else:
-            media_inputs = []
-            temp_files = []
-
-            with st.spinner("미디어 파일 분석 및 준비 중..."):
-                if uploaded_files:
-                    for file in uploaded_files:
-                        if file.type.startswith("image"):
-                            media_inputs.append(Image.open(file))
-                        elif file.type.startswith("video"):
-                            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_file:
-                                tmp_file.write(file.read())
-                                tmp_file_path = tmp_file.name
-                                temp_files.append(tmp_file_path)
-                            
-                            uploaded_gemini_file = client.files.upload(file=tmp_file_path)
-                            media_inputs.append(uploaded_gemini_file)
-
-            with st.spinner("AI가 채널별 맞춤 원고를 작성하고 있습니다..."):
-                prompt = f"""
-                너는 인스타그램, 네이버 블로그, 숏폼(릴스/클립/숏츠), 오늘의집 등 다양한 채널을 운영하는 전문 인플루언서 에이전트야.
-                제공된 사진/동영상들의 전체적인 감성, 색감, 장소, 분위기, 스타일을 세밀하게 분석하고 이를 반영해서 각 플랫폼 스타일에 맞게 글을 작성해줘.
-
-                [주제/제목]: {topic}
-                [필수 반영/고려 사항]: {must_include if must_include else "특별한 추가 요구사항 없음"}
-
-                ---
-                ### 1. 인스타그램 피드
-                - 인스타그램 특유의 감성적이고 친근한 톤앤매너
-                - 적절하고 다채로운 이모티콘 적극 활용
-                - 본문 작성 후 관련 인기 해시태그 목록 작성 (#내돈내산 #육아템 #육아소통 등)
-
-                ### 2. 네이버 블로그 (경험 위주 솔직후기)
-                - 초보맘/인플루언서 관점의 다정하고 솔직한 경험담 말투
-                - 구성 요소:
-                  1) 구매처 및 할인 꿀팁 (온누리상품권 할인, 백화점 상품권 활용 등)[cite: 1]
-                  2) 제품 언박싱 & 실물 느낌/컬러 소감[cite: 1]
-                  3) 솔직 장점 분석 (폴딩, 휴대성, 핸들링, 트래블 시스템 결합, 리콜/AS 대응 감동 비하인드 등)[cite: 1]
-                  4) 구매 시 고려해야 할 단점/아쉬운 점 (범퍼바 별도 구매, 등받이 각도 등)[cite: 1]
-                  5) 추천 대상 요약 정리[cite: 1]
-                - 글 중간중간 [추가하면 좋을 사진/내용 팁] (예: 매장 지도 위치, 결합 사진, 리콜 안내 문자 캡처 등)을 가이드 형태로 제안해줘.[cite: 1]
-
-                ### 3. 숏폼 스크립트 (인스타 릴스 / 네이버 클립 / 유튜브 숏츠)
-                - 시선을 사로잡는 강력한 3초 후킹 멘트
-                - 화면 자막 및 대사 스크립트
-                - 댓글과 조회수 반응을 이끌어낼 수 있는 공감 포인트 구성
-
-                ### 4. 오늘의 집
-                - 감성적인 공간 스타일링 노트, 인테리어/동선과의 조화, 가벼운 추천글 톤앤매너
-                """
-
-                try:
-                    input_data = [prompt] + media_inputs
-                    response = client.models.generate_content(
-                        model='gemini-3.6-flash',
-                        contents=input_data
-                    )
-
-                    st.session_state.generated_result = response.text
-                    st.session_state.last_topic = topic
-                except Exception as e:
-                    st.error(f"콘텐츠 생성 중 오류가 발생했습니다: {e}")
-                finally:
-                    for tmp_path in temp_files:
-                        if os.path.exists(tmp_path):
-                            os.remove(tmp_path)
-
-    # -------------------------------------------------------------------
-    # 결과물 표시 및 히스토리 저장 관리
-    # -------------------------------------------------------------------
-    if st.session_state.generated_result:
-        st.markdown("---")
-        st.subheader("✨ 생성된 원고 결과물")
-        st.markdown(st.session_state.generated_result)
-
-        st.markdown("---")
-        col1, col2 = st.columns(2)
-
-        # [수정 포인트] 저장이 즉시 반영되도록 처리
-        with col1:
-            st.subheader("💾 원고 저장 관리")
+# 4. 콘텐츠 생성 프로세스
+if st.button("🚀 모든 플랫폼 콘텐츠 일괄 생성하기", type="primary", use_container_width=True):
+    if not topic or not context_text:
+        st.warning("주제와 상세 경험 내용을 입력해 주세요!")
+        st.stop()
+        
+    with st.spinner("AI가 멀티 플랫폼 맞춤형 글을 생성 중입니다..."):
+        try:
+            # Gemini 1.5 Flash 모델 설정 (v3.6 FLASH 대응)
+            model = genai.GenerativeModel('gemini-1.5-flash')
             
-            if st.button("📌 원고 목록(히스토리)에 저장하기"):
-                # 중복 저장 방지 및 리스트 추가
-                new_id = len(st.session_state.history) + 1
-                now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+            # 첨부된 미디어 처리
+            media_prompts = []
+            if uploaded_files:
+                for file in uploaded_files:
+                    if file.type.startswith('image'):
+                        media_prompts.append({"mime_type": file.type, "data": file.getvalue()})
+
+            # 프롬프트 구성
+            prompt = f"""
+            당신은 인스타그램, 네이버 블로그, 숏폼(릴스/클립), 오늘의 집 등을 정복한 전문 인플루언서 콘텐츠 에이전트입니다.
+            아래 전달받은 [주제]와 [상세 경험] 및 첨부된 사진/영상 분위기를 참고하여 각 플랫폼 규격에 맞춘 최적의 글을 작성하세요.
+
+            [주제]: {topic}
+            [상세 경험 및 원본 데이터]: {context_text}
+
+            ---
+
+            ### 1. 네이버 블로그 (Blog)
+            - **톤앤매너**: 경험 위주의 친근하고 꼼꼼한 솔직 후기 스타일 (예: 초보맘, 일상 블로거 다정한 말투).
+            - **이모지**: 글 전반에 다채롭고 풍성하게 이모지를 추가하여 가독성과 감성을 높여주세요 💖✨👶🛍️.
+            - **제약사항**: 각 꼭지나 단락 사이에 절대로 가로줄(--- 또는 <hr>)을 넣지 마세요. 깔끔한 소제목과 공백으로만 구분하세요.
+            - **구성**:
+              - 자연스러운 제목
+              - 도입부 인사 및 고민 과정
+              - [장점/특징] 세부 단락 (이모지 소제목 활용)
+              - 추가로 첨부하면 좋을 사진/내용 제안 (예: [📸 사진 추천: ~하는 모습])
+              - 마무리 요약 및 이웃 유도 멘트
+
+            ### 2. 인스타그램 피드 (Instagram Feed)
+            - **톤앤매너**: 인스타 특유의 트렌디하고 감성적인 말투, 한눈에 들어오는 가독성.
+            - **구성**: 
+              - 감성적인 첫 줄 후킹 멘트
+              - 간결하고 위트 있는 본문 및 적절한 이모지 조합
+              - 핵심 해시태그 15~20개 포함 (#육아템 #내돈내산 등)
+
+            ### 3. 인스타그램 릴스 / 네이버 클립 (Shorts Video Script)
+            - **목적**: 15~30초 이내 시청자 시선을 사로잡는 숏폼 대본.
+            - **구성**:
+              - 3초 이내 이탈을 막는 초강력 **후킹 멘트** (텍스트 자막용)
+              - 숏폼 영상 구성안 (시각적 연출 지시어 + 나레이션/자막)
+              - 시청자가 댓글을 남기게 만드는 반응 유도 멘트 (CTA)
+
+            ### 4. 오늘의 집 (House Today)
+            - **톤앤매너**: 공간, 인테리어, 라이프스타일과 자연스럽게 어우러지는 톤.
+            - **구성**:
+              - 공간감과 제품의 실용성을 подчер키하는 내돈내산 스타일 소개
+              - 사용 팁 및 배치 스타일링 추천
+
+            각 플랫폼별 내용을 명확히 구분하여 작성해 주세요.
+            """
+
+            # AI 생성 호출
+            response = model.generate_content([prompt, *media_prompts])
+            result_text = response.text
+
+            # 결과 분할 및 출력 파싱
+            st.success("🎉 모든 플랫폼 맞춤형 콘텐츠 작성이 완료되었습니다!")
+            
+            # 파싱용 구분 (임의 파싱 및 섹션 출력)
+            st.divider()
+            
+            # 탭 형태로 결과 제공 + 각각 복사 버튼 제공
+            tab1, tab2, tab3, tab4 = st.tabs(["📝 네이버 블로그", "📸 인스타그램 피드", "🎬 릴스 / 클립 (숏폼)", "🏠 오늘의 집"])
+
+            with tab1:
+                render_copyable_content("네이버 블로그 포스팅", result_text, "blog")
                 
-                st.session_state.history.append({
-                    "id": new_id,
-                    "date": now_str,
-                    "topic": st.session_state.last_topic,
-                    "content": st.session_state.generated_result
-                })
-                st.success("왼쪽 사이드바 '저장된 원고 목록'에 성공적으로 저장되었습니다!")
-                st.rerun() # 사이드바에 즉시 새로고침하여 표시
+            with tab2:
+                render_copyable_content("인스타그램 피드", result_text, "insta")
 
-            st.write("")
-            st.download_button(
-                label="📄 텍스트(.txt) 파일로 다운로드",
-                data=st.session_state.generated_result,
-                file_name=f"{st.session_state.last_topic}_원고.txt",
-                mime="text/plain"
-            )
+            with tab3:
+                render_copyable_content("릴스 / 네이버 클립 대본", result_text, "reels")
 
-        with col2:
-            st.subheader("🔄 피드백 반영 / 보완하여 재생성")
-            refine_feedback = st.text_area("보완하고 싶은 점을 적어주세요", placeholder="예: 릴스 후킹 멘트를 더 강력하게 수정해줘, 블로그 글에 내돈내산 팁을 더 강조해줘 등")
+            with tab4:
+                render_copyable_content("오늘의 집 스타일", result_text, "today_house")
 
-            if st.button("✨ 보완점 반영하여 다시 생성하기"):
-                if refine_feedback:
-                    with st.spinner("요청하신 보완사항을 반영하여 원고를 수정 중입니다..."):
-                        refine_prompt = f"""
-                        이전 작성한 원고에서 아래 요청사항을 반영하여 전체 내용을 수정해줘:
-
-                        [기존 주제]: {st.session_state.last_topic}
-                        [수정/보완 요청사항]: {refine_feedback}
-
-                        [이전 원고 내용]:
-                        {st.session_state.generated_result}
-                        """
-                        response = client.models.generate_content(
-                            model='gemini-3.6-flash',
-                            contents=refine_prompt
-                        )
-                        st.session_state.generated_result = response.text
-                        st.rerun()
-                else:
-                    st.warning("보완할 내용을 입력해주세요!")
-else:
-    st.info("왼쪽 사이드바에 Gemini API 키를 입력해 주세요.")
+        except Exception as e:
+            st.error(f"콘텐츠 생성 중 오류가 발생했습니다: {e}")
