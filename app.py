@@ -2,13 +2,15 @@ import streamlit as st
 import google.genai as genai
 from PIL import Image
 from datetime import datetime
+import tempfile
+import os
 
 st.set_page_config(page_title="멀티플랫폼 AI 콘텐츠 에이전트", layout="wide")
 
 st.title("📸 멀티플랫폼 인플루언서 AI 콘텐츠 에이전트")
 st.write("주제, 미디어(사진/동영상), 필수 고려사항을 입력하면 각 플랫폼 감성에 맞춘 콘텐츠를 자동 생성합니다.")
 
-# 세션 상태 초기화 (결과 저장, 히스토리 저장 목록 관리)
+# 세션 상태 초기화
 if "generated_result" not in st.session_state:
     st.session_state.generated_result = ""
 if "last_topic" not in st.session_state:
@@ -16,7 +18,7 @@ if "last_topic" not in st.session_state:
 if "history" not in st.session_state:
     st.session_state.history = []
 
-# Gemini API 키 입력
+# API 키 입력
 api_key = st.sidebar.text_input("Google Gemini API Key 입력", type="password")
 
 # -------------------------------------------------------------------
@@ -49,35 +51,47 @@ else:
 
 
 # -------------------------------------------------------------------
-# 메인화면: API 키 인증 후 동작 (3가지 필수 입력창 반영)
+# 메인화면: API 키 인증 및 입력폼
 # -------------------------------------------------------------------
 if api_key:
     client = genai.Client(api_key=api_key)
 
-    # [요청기능 1] 제목/주제 쓰는 칸
+    # 1. 제목/주제 입력
     topic = st.text_input("1. 콘텐츠 제목 / 주제를 입력하세요", placeholder="예: [사용후기] 줄즈 에어2 유모차 & 다이치 카시트 내돈내산 추천")
     
-    # [요청기능 2] 이미지/동영상 업로드 기능
+    # 2. 이미지 및 동영상 업로드
     uploaded_files = st.file_uploader("2. 사진 또는 동영상을 업로드하세요 (복수 선택 가능)", type=["jpg", "jpeg", "png", "mp4"], accept_multiple_files=True)
 
-    # [요청기능 3] 내용을 쓸 때 꼭 고려해야 하는 내용을 적는 칸
+    # 3. 필수 고려사항 입력
     must_include = st.text_area(
         "3. 내용 작성 시 꼭 고려하거나 포함해야 할 사항을 입력하세요", 
-        placeholder="예: 온누리상품권 10~15% 할인 구매 꿀팁, 어댑터 리콜 대응에 감동받은 비하인드, 등받이 각도나 범퍼바 별도구매 등 아쉬운 점, 한 손 폴딩 및 기내반입 장점"
+        placeholder="예: 온누리상품권 10~15% 할인 구매 꿀팁, 어댑터 리콜 대응에 감동받은 비하인드, 등받이 각도나 범퍼바 별도구매 등 아쉬운 점"
     )
 
-    # 콘텐츠 전체 생성 버튼
+    # 콘텐츠 생성 버튼
     if st.button("🚀 전체 플랫폼 콘텐츠 생성하기"):
         if not topic:
             st.warning("제목/주제를 입력해주세요!")
         else:
-            images = []
-            if uploaded_files:
-                for file in uploaded_files:
-                    if file.type.startswith("image"):
-                        images.append(Image.open(file))
+            media_inputs = []
+            temp_files = [] # 임시 파일 삭제용
 
-            with st.spinner("AI가 미디어의 감성과 느낌을 분석하여 플랫폼별 맞춤 글을 작성 중입니다..."):
+            with st.spinner("미디어 파일 업로드 및 분석 준비 중..."):
+                if uploaded_files:
+                    for file in uploaded_files:
+                        if file.type.startswith("image"):
+                            media_inputs.append(Image.open(file))
+                        elif file.type.startswith("video"):
+                            # 동영상 파일은 Gemini File API로 안전하게 전송
+                            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp4") as tmp_file:
+                                tmp_file.write(file.read())
+                                tmp_file_path = tmp_file.name
+                                temp_files.append(tmp_file_path)
+                            
+                            uploaded_gemini_file = client.files.upload(file=tmp_file_path)
+                            media_inputs.append(uploaded_gemini_file)
+
+            with st.spinner("AI가 미디어의 감성과 느낌을 분석하여 플랫폼별 맞춤 원고를 생성하고 있습니다..."):
                 prompt = f"""
                 너는 인스타그램, 네이버 블로그, 숏폼(릴스/클립/숏츠), 오늘의집 등 다양한 채널을 운영하는 전문 인플루언서 에이전트야.
                 제공된 사진/동영상들의 전체적인 감성, 색감, 장소, 분위기, 스타일을 세밀하게 분석하고 이를 반영해서 각 플랫폼 스타일에 맞게 글을 작성해줘.
@@ -94,7 +108,7 @@ if api_key:
                 ### 2. 네이버 블로그 (경험 위주 솔직후기)
                 - 초보맘/인플루언서 관점의 다정하고 솔직한 경험담 말투
                 - 구성 요소:
-                  1) 구매처 및 할인 꿀팁 (온누리상품권 할인, 상품권 활용 등)
+                  1) 구매처 및 할인 꿀팁 (온누리상품권 할인, 백화점 상품권 활용 등)
                   2) 제품 언박싱 & 실물 느낌/컬러 소감
                   3) 솔직 장점 분석 (폴딩, 휴대성, 핸들링, 트래블 시스템 결합, 리콜/AS 대응 감동 비하인드 등)
                   4) 구매 시 고려해야 할 단점/아쉬운 점 (범퍼바 별도 구매, 등받이 각도 등)
@@ -110,17 +124,25 @@ if api_key:
                 - 감성적인 공간 스타일링 노트, 인테리어/동선과의 조화, 가벼운 추천글 톤앤매너
                 """
 
-                input_data = [prompt] + images
-                response = client.models.generate_content(
-                    model='gemini-2.5-flash',
-                    contents=input_data
-                )
+                try:
+                    input_data = [prompt] + media_inputs
+                    response = client.models.generate_content(
+                        model='gemini-2.5-flash',
+                        contents=input_data
+                    )
 
-                st.session_state.generated_result = response.text
-                st.session_state.last_topic = topic
+                    st.session_state.generated_result = response.text
+                    st.session_state.last_topic = topic
+                except Exception as e:
+                    st.error(f"콘텐츠 생성 중 오류가 발생했습니다: {e}")
+                finally:
+                    # 임시 파일 정리
+                    for tmp_path in temp_files:
+                        if os.path.exists(tmp_path):
+                            os.remove(tmp_path)
 
     # -------------------------------------------------------------------
-    # 결과물 표시 및 보완/저장/리스트 관리
+    # 결과물 표시 및 보완/저장 관리
     # -------------------------------------------------------------------
     if st.session_state.generated_result:
         st.markdown("---")
@@ -130,7 +152,7 @@ if api_key:
         st.markdown("---")
         col1, col2 = st.columns(2)
 
-        # [기능 A] 히스토리 저장 및 텍스트 다운로드
+        # [기능 1] 히스토리 저장 및 텍스트 다운로드
         with col1:
             st.subheader("💾 원고 저장 관리")
             
@@ -153,7 +175,7 @@ if api_key:
                 mime="text/plain"
             )
 
-        # [기능 B] 피드백 반영 재생성
+        # [기능 2] 피드백 반영 재생성
         with col2:
             st.subheader("🔄 피드백 반영 / 보완하여 재생성")
             refine_feedback = st.text_area("보완하고 싶은 점을 적어주세요", placeholder="예: 릴스 후킹 멘트를 더 강력하게 수정해줘, 블로그 글에 내돈내산 팁을 더 강조해줘 등")
