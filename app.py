@@ -4,6 +4,7 @@ from PIL import Image
 from datetime import datetime
 import tempfile
 import os
+import re
 
 st.set_page_config(page_title="멀티플랫폼 AI 콘텐츠 에이전트", layout="wide")
 
@@ -11,7 +12,7 @@ st.title("📸 멀티플랫폼 인플루언서 AI 콘텐츠 에이전트")
 st.write("주제, 미디어(사진/동영상), 필수 고려사항을 입력하면 각 플랫폼 감성에 맞춘 콘텐츠를 자동 생성합니다.")
 
 # -------------------------------------------------------------------
-# 세션 상태 초기화 (데이터 유지의 핵심)
+# 세션 상태 초기화
 # -------------------------------------------------------------------
 if "generated_result" not in st.session_state:
     st.session_state.generated_result = ""
@@ -30,7 +31,6 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📚 저장된 원고 목록")
 
 if st.session_state.history:
-    # 선택 메뉴
     history_options = {f"[{item['date']}] {item['topic']}": item for item in st.session_state.history}
     selected_label = st.sidebar.selectbox("불러올 원고를 선택하세요", list(history_options.keys()))
     
@@ -48,6 +48,32 @@ if st.session_state.history:
         st.rerun()
 else:
     st.sidebar.info("아직 저장된 원고가 없습니다.")
+
+
+# -------------------------------------------------------------------
+# 텍스트 파싱 함수 (플랫폼별 탭 분리를 위함)
+# -------------------------------------------------------------------
+def parse_platform_sections(text):
+    """생성된 원고 텍스트를 각 플랫폼 섹션별로 분리합니다."""
+    sections = {
+        "instagram": "",
+        "blog": "",
+        "shortform": "",
+        "ohou": ""
+    }
+    
+    # 정규표현식을 활용한 섹션 분할
+    insta_match = re.search(r"### 1\. 인스타그램 피드\n(.*?)(?=### 2\. 네이버 블로그|$)", text, re.DOTALL)
+    blog_match = re.search(r"### 2\. 네이버 블로그.*?\n(.*?)(?=### 3\. 숏폼 스크립트|$)", text, re.DOTALL)
+    short_match = re.search(r"### 3\. 숏폼 스크립트.*?\n(.*?)(?=### 4\. 오늘의 집|$)", text, re.DOTALL)
+    ohou_match = re.search(r"### 4\. 오늘의 집\n(.*?)$", text, re.DOTALL)
+    
+    sections["instagram"] = insta_match.group(1).strip() if insta_match else ""
+    sections["blog"] = blog_match.group(1).strip() if blog_match else ""
+    sections["shortform"] = short_match.group(1).strip() if short_match else ""
+    sections["ohou"] = ohou_match.group(1).strip() if ohou_match else ""
+    
+    return sections
 
 
 # -------------------------------------------------------------------
@@ -99,14 +125,18 @@ if api_key:
                 - 본문 작성 후 관련 인기 해시태그 목록 작성 (#내돈내산 #육아템 #육아소통 등)
 
                 ### 2. 네이버 블로그 (경험 위주 솔직후기)
-                - 초보맘/인플루언서 관점의 다정하고 솔직한 경험담 말투
-                - 구성 요소:
-                  1) 구매처 및 할인 꿀팁 (온누리상품권 할인, 백화점 상품권 활용 등)[cite: 1]
-                  2) 제품 언박싱 & 실물 느낌/컬러 소감[cite: 1]
-                  3) 솔직 장점 분석 (폴딩, 휴대성, 핸들링, 트래블 시스템 결합, 리콜/AS 대응 감동 비하인드 등)[cite: 1]
-                  4) 구매 시 고려해야 할 단점/아쉬운 점 (범퍼바 별도 구매, 등받이 각도 등)[cite: 1]
-                  5) 추천 대상 요약 정리[cite: 1]
-                - 글 중간중간 [추가하면 좋을 사진/내용 팁] (예: 매장 지도 위치, 결합 사진, 리콜 안내 문자 캡처 등)을 가이드 형태로 제안해줘.[cite: 1]
+                - **글자수 조건**: 공백 포함 **최소 1,500자 ~ 최대 2,000자 분량**으로 서론, 본론, 결론을 매우 풍부하고 디테일하게 작성할 것.
+                - **스타일 조건**: 
+                  1) 섹션 구분 시 가로줄(---)을 절대로 사용하지 말 것.
+                  2) 글의 가독성과 몰입감을 위해 문단 사이 및 제목, 본문 곳곳에 귀엽고 직관적인 이모지(✨, 👶, 🛒, 💡, 맘, ❤️ 등)를 다채롭게 추가할 것.
+                - 초보맘/인플루언서 관점의 다정하고 솔직한 경험담 말투 (~했답니다, ~했지 뭐예요 등)
+                - 필수 구성 요소:
+                  1) 구매처 및 할인 꿀팁 (온누리상품권 할인, 백화점 상품권 활용 등)
+                  2) 제품 언박싱 & 실물 느낌/컬러 소감
+                  3) 솔직 장점 분석 (폴딩, 휴대성, 핸들링, 트래블 시스템 결합, 리콜/AS 대응 감동 비하인드 등)
+                  4) 구매 시 고려해야 할 단점/아쉬운 점 (범퍼바 별도 구매, 등받이 각도 등)
+                  5) 추천 대상 요약 정리
+                - 글 중간중간 [📸 사진 추천: 매장 지도 위치 / 결합 사진 / 리콜 안내 문자 캡처 등] 가이드를 넣어줄 것.
 
                 ### 3. 숏폼 스크립트 (인스타 릴스 / 네이버 클립 / 유튜브 숏츠)
                 - 시선을 사로잡는 강력한 3초 후킹 멘트
@@ -134,22 +164,50 @@ if api_key:
                             os.remove(tmp_path)
 
     # -------------------------------------------------------------------
-    # 결과물 표시 및 히스토리 저장 관리
+    # 결과물 표시 및 개별 복사 / 히스토리 저장 관리
     # -------------------------------------------------------------------
     if st.session_state.generated_result:
         st.markdown("---")
         st.subheader("✨ 생성된 원고 결과물")
-        st.markdown(st.session_state.generated_result)
+
+        # 섹션별 텍스트 파싱
+        parsed_data = parse_platform_sections(st.session_state.generated_result)
+
+        # 플랫폼별 탭 구성 (복사 기능 편의성 대폭 향상)
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "📸 인스타그램", 
+            "📝 네이버 블로그", 
+            "🎬 숏폼 스크립트", 
+            "🏠 오늘의 집", 
+            "📄 전체 원고 보기"
+        ])
+
+        with tab1:
+            st.caption("💡 오른쪽 상단 복사 버튼(📋)을 클릭하면 인스타그램 원고만 복사됩니다.")
+            st.code(parsed_data["instagram"] if parsed_data["instagram"] else "내용이 없습니다.", language=None)
+
+        with tab2:
+            st.caption("💡 오른쪽 상단 복사 버튼(📋)을 클릭하면 블로그 원고만 복사됩니다.")
+            st.code(parsed_data["blog"] if parsed_data["blog"] else "내용이 없습니다.", language=None)
+
+        with tab3:
+            st.caption("💡 오른쪽 상단 복사 버튼(📋)을 클릭하면 숏폼 스크립트만 복사됩니다.")
+            st.code(parsed_data["shortform"] if parsed_data["shortform"] else "내용이 없습니다.", language=None)
+
+        with tab4:
+            st.caption("💡 오른쪽 상단 복사 버튼(📋)을 클릭하면 오늘의집 원고만 복사됩니다.")
+            st.code(parsed_data["ohou"] if parsed_data["ohou"] else "내용이 없습니다.", language=None)
+
+        with tab5:
+            st.markdown(st.session_state.generated_result)
 
         st.markdown("---")
         col1, col2 = st.columns(2)
 
-        # [수정 포인트] 저장이 즉시 반영되도록 처리
         with col1:
             st.subheader("💾 원고 저장 관리")
             
             if st.button("📌 원고 목록(히스토리)에 저장하기"):
-                # 중복 저장 방지 및 리스트 추가
                 new_id = len(st.session_state.history) + 1
                 now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
                 
@@ -160,11 +218,11 @@ if api_key:
                     "content": st.session_state.generated_result
                 })
                 st.success("왼쪽 사이드바 '저장된 원고 목록'에 성공적으로 저장되었습니다!")
-                st.rerun() # 사이드바에 즉시 새로고침하여 표시
+                st.rerun()
 
             st.write("")
             st.download_button(
-                label="📄 텍스트(.txt) 파일로 다운로드",
+                label="📄 전체 원고 텍스트(.txt) 다운로드",
                 data=st.session_state.generated_result,
                 file_name=f"{st.session_state.last_topic}_원고.txt",
                 mime="text/plain"
@@ -172,7 +230,7 @@ if api_key:
 
         with col2:
             st.subheader("🔄 피드백 반영 / 보완하여 재생성")
-            refine_feedback = st.text_area("보완하고 싶은 점을 적어주세요", placeholder="예: 릴스 후킹 멘트를 더 강력하게 수정해줘, 블로그 글에 내돈내산 팁을 더 강조해줘 등")
+            refine_feedback = st.text_area("보완하고 싶은 점을 적어주세요", placeholder="예: 블로그 글에 사진 들어갈 위치를 2개 더 늘려줘, 인스타 해시태그를 더 많이 뽑아줘 등")
 
             if st.button("✨ 보완점 반영하여 다시 생성하기"):
                 if refine_feedback:
@@ -182,6 +240,11 @@ if api_key:
 
                         [기존 주제]: {st.session_state.last_topic}
                         [수정/보완 요청사항]: {refine_feedback}
+
+                        * 블로그 글 규칙 재확인:
+                          - 공백 포함 최소 1,500자 ~ 최대 2,000자 분량
+                          - 가로줄(---) 절대 금지
+                          - 다양하고 풍부한 이모지 적극 활용
 
                         [이전 원고 내용]:
                         {st.session_state.generated_result}
