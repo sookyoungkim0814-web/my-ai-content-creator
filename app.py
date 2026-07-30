@@ -1,4 +1,5 @@
 import os
+import re
 import sqlite3
 import tempfile
 from datetime import datetime
@@ -126,7 +127,7 @@ def clear_inputs():
 
 
 # -------------------------------------------------------------------
-# 헬퍼 함수: 플랫폼별 원고 자동 파싱 기능
+# 헬퍼 함수: 플랫폼별 원고 정교한 자동 파싱 기능 (정규표현식 기반)
 # -------------------------------------------------------------------
 def parse_sections(content):
   sections = {
@@ -137,30 +138,33 @@ def parse_sections(content):
       "오늘의 집": "",
   }
 
-  keywords = [
-      ("### 1. 인스타그램 피드", "인스타그램 피드"),
-      ("### 2. 인스타그램 캐러셀", "인스타그램 캐러셀"),
-      ("### 3. 네이버 블로그", "네이버 블로그"),
-      ("### 4. 숏폼 스크립트", "숏폼 스크립트"),
-      ("### 5. 오늘의 집", "오늘의 집"),
+  patterns = [
+      (r"###\s*1\.\s*인스타그램\s*피드", "인스타그램 피드"),
+      (r"###\s*2\.\s*인스타그램\s*캐러셀", "인스타그램 캐러셀"),
+      (r"###\s*3\.\s*네이버\s*블로그", "네이버 블로그"),
+      (r"###\s*4\.\s*숏폼\s*스크립트", "숏폼 스크립트"),
+      (r"###\s*5\.\s*오늘의\s*집", "오늘의 집"),
   ]
 
-  # 텍스트 내에서 헤더 위치 검색
-  found_indices = []
-  for header, key in keywords:
-    pos = content.find(header)
-    if pos != -1:
-      found_indices.append((pos, header, key))
+  found_spans = []
 
-  found_indices.sort(key=lambda x: x[0])
+  for pattern, key in patterns:
+    match = re.search(pattern, content)
+    if match:
+      found_spans.append((match.start(), match.end(), key))
 
-  for i in range(len(found_indices)):
-    pos, header, key = found_indices[i]
-    start_pos = pos + len(header)
-    end_pos = (
-        found_indices[i + 1][0] if i + 1 < len(found_indices) else len(content)
-    )
-    sections[key] = content[start_pos:end_pos].strip()
+  found_spans.sort(key=lambda x: x[0])
+
+  for i in range(len(found_spans)):
+    start_pos, match_end, key = found_spans[i]
+    end_pos = found_spans[i + 1][0] if i + 1 < len(found_spans) else len(content)
+
+    raw_text = content[match_end:end_pos]
+    lines = raw_text.split("\n", 1)
+    if len(lines) > 1:
+      sections[key] = lines[1].strip()
+    else:
+      sections[key] = raw_text.strip()
 
   return sections
 
@@ -234,7 +238,6 @@ if api_key:
                 - 인스타그램 특유의 감성적이고 친근한 톤앤매너
                 - 적절하고 다채로운 이모티콘 적극 활용
                 - 본문 작성 후 관련 인기 해시태그 목록 작성 (#내돈내산 #육아템 #육아소통 등)
-                - 장/단점/특징 등을 기록할때는 "·" 표시 등을 활용해서 꼭지별로 내용을 기록해도 좋아
 
                 ### 2. 인스타그램 캐러셀
                 - 인스타그램 특유의 감성적이고 친근한 톤앤매너로 3~8페이지 작성
@@ -264,7 +267,6 @@ if api_key:
 
                 ### 5. 오늘의 집
                 - 감성적인 공간 스타일링 노트, 인테리어/동선과의 조화, 가벼운 추천글 톤앤매너
-                - 글자 수는 최대 200자 이내로 작성
                 """
 
         try:
