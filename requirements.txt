@@ -3,3 +3,4 @@ google-genai
 pillow
 streamlit-clipboard
 psycopg2-binary
+sqlalchemy
