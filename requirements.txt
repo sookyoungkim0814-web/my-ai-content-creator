@@ -2,3 +2,4 @@ streamlit
 google-genai
 pillow
 streamlit-clipboard
+pip install psycopg2-binary
