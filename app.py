@@ -11,10 +11,12 @@ import streamlit as st
 # -------------------------------------------------------------------
 # 0. Supabase (PostgreSQL) 데이터베이스 설정
 # -------------------------------------------------------------------
+from sqlalchemy import create_engine
+
 def get_db_connection():
-    # Streamlit Secrets에 저장된 DATABASE_URL 사용
     db_url = st.secrets["DATABASE_URL"]
-    return psycopg2.connect(db_url)
+    engine = create_engine(db_url)
+    return engine.raw_connection()
 
 
 def init_db():
