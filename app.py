@@ -1,66 +1,77 @@
 import os
 import re
-import sqlite3
 import tempfile
 from datetime import datetime
 import google.genai as genai
 from PIL import Image
+import psycopg2
+from psycopg2.extras import RealDictCursor
 import streamlit as st
 
 # -------------------------------------------------------------------
-# 0. SQLite 데이터베이스 설정 (재접속 시에도 데이터 유지를 위함)
+# 0. Supabase (PostgreSQL) 데이터베이스 설정
 # -------------------------------------------------------------------
-DB_FILE = "manuscripts.db"
+def get_db_connection():
+    # Streamlit Secrets에 저장된 DATABASE_URL 사용
+    db_url = st.secrets["DATABASE_URL"]
+    return psycopg2.connect(db_url)
 
 
 def init_db():
-  conn = sqlite3.connect(DB_FILE)
-  c = conn.cursor()
-  c.execute("""
+    conn = get_db_connection()
+    c = conn.cursor()
+    # PostgreSQL 구문에 맞춘 테이블 생성
+    c.execute("""
         CREATE TABLE IF NOT EXISTS history (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            date TEXT,
+            id SERIAL PRIMARY KEY,
+            date VARCHAR(50),
             topic TEXT,
             content TEXT
         )
     """)
-  conn.commit()
-  conn.close()
+    conn.commit()
+    c.close()
+    conn.close()
 
 
 def load_history():
-  conn = sqlite3.connect(DB_FILE)
-  c = conn.cursor()
-  c.execute("SELECT id, date, topic, content FROM history ORDER BY id DESC")
-  rows = c.fetchall()
-  conn.close()
-  return [
-      {"id": row[0], "date": row[1], "topic": row[2], "content": row[3]}
-      for row in rows
-  ]
+    conn = get_db_connection()
+    c = conn.cursor(cursor_factory=RealDictCursor)
+    c.execute("SELECT id, date, topic, content FROM history ORDER BY id DESC")
+    rows = c.fetchall()
+    c.close()
+    conn.close()
+    # 기존 코드와 호환되는 Dict 리스트 구조 반환
+    return [
+        {"id": row["id"], "date": row["date"], "topic": row["topic"], "content": row["content"]}
+        for row in rows
+    ]
 
 
 def save_history(topic, content):
-  conn = sqlite3.connect(DB_FILE)
-  c = conn.cursor()
-  now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
-  c.execute(
-      "INSERT INTO history (date, topic, content) VALUES (?, ?, ?)",
-      (now_str, topic, content),
-  )
-  conn.commit()
-  conn.close()
+    conn = get_db_connection()
+    c = conn.cursor()
+    now_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+    # PostgreSQL 파라미터 바인딩(%s) 적용
+    c.execute(
+        "INSERT INTO history (date, topic, content) VALUES (%s, %s, %s)",
+        (now_str, topic, content),
+    )
+    conn.commit()
+    c.close()
+    conn.close()
 
 
 def delete_history_item(item_id):
-  conn = sqlite3.connect(DB_FILE)
-  c = conn.cursor()
-  c.execute("DELETE FROM history WHERE id = ?", (item_id,))
-  conn.commit()
-  conn.close()
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("DELETE FROM history WHERE id = %s", (item_id,))
+    conn.commit()
+    c.close()
+    conn.close()
 
 
-# DB 초기화
+# DB 초기화 (최초 테이블 자동 생성)
 init_db()
 
 # -------------------------------------------------------------------
@@ -75,11 +86,11 @@ st.write(
 )
 
 if "generated_result" not in st.session_state:
-  st.session_state.generated_result = ""
+    st.session_state.generated_result = ""
 if "last_topic" not in st.session_state:
-  st.session_state.last_topic = ""
+    st.session_state.last_topic = ""
 if "input_key_suffix" not in st.session_state:
-  st.session_state.input_key_suffix = 0
+    st.session_state.input_key_suffix = 0
 
 # API 키 입력
 api_key = st.sidebar.text_input("Google Gemini API Key 입력", type="password")
@@ -94,139 +105,139 @@ st.sidebar.markdown("---")
 st.sidebar.subheader("📚 저장된 원고 목록")
 
 if history_list:
-  history_options = {
-      f"[{item['date']}] {item['topic']}": item for item in history_list
-  }
-  selected_label = st.sidebar.selectbox(
-      "불러올 원고를 선택하세요", list(history_options.keys())
-  )
+    history_options = {
+        f"[{item['date']}] {item['topic']}": item for item in history_list
+    }
+    selected_label = st.sidebar.selectbox(
+        "불러올 원고를 선택하세요", list(history_options.keys())
+    )
 
-  col_nav1, col_nav2 = st.sidebar.columns(2)
-  if col_nav1.button("📖 원고 불러오기"):
-    target_item = history_options[selected_label]
-    st.session_state.generated_result = target_item["content"]
-    st.session_state.last_topic = target_item["topic"]
-    st.rerun()
+    col_nav1, col_nav2 = st.sidebar.columns(2)
+    if col_nav1.button("📖 원고 불러오기"):
+        target_item = history_options[selected_label]
+        st.session_state.generated_result = target_item["content"]
+        st.session_state.last_topic = target_item["topic"]
+        st.rerun()
 
-  if col_nav2.button("🗑️ 원고 삭제"):
-    target_item = history_options[selected_label]
-    delete_history_item(target_item["id"])
-    st.sidebar.success("원고가 삭제되었습니다.")
-    st.rerun()
+    if col_nav2.button("🗑️ 원고 삭제"):
+        target_item = history_options[selected_label]
+        delete_history_item(target_item["id"])
+        st.sidebar.success("원고가 삭제되었습니다.")
+        st.rerun()
 else:
-  st.sidebar.info("아직 저장된 원고가 없습니다.")
+    st.sidebar.info("아직 저장된 원고가 없습니다.")
 
 
 # -------------------------------------------------------------------
 # 헬퍼 함수: 입력폼 초기화 기능
 # -------------------------------------------------------------------
 def clear_inputs():
-  st.session_state.input_key_suffix += 1
-  st.session_state.generated_result = ""
-  st.session_state.last_topic = ""
+    st.session_state.input_key_suffix += 1
+    st.session_state.generated_result = ""
+    st.session_state.last_topic = ""
 
 
 # -------------------------------------------------------------------
 # 헬퍼 함수: 플랫폼별 원고 정교한 자동 파싱 기능 (정규표현식 기반)
 # -------------------------------------------------------------------
 def parse_sections(content):
-  sections = {
-      "인스타그램 피드": "",
-      "인스타그램 캐러셀": "",
-      "네이버 블로그": "",
-      "숏폼 스크립트": "",
-      "오늘의 집": "",
-  }
+    sections = {
+        "인스타그램 피드": "",
+        "인스타그램 캐러셀": "",
+        "네이버 블로그": "",
+        "숏폼 스크립트": "",
+        "오늘의 집": "",
+    }
 
-  patterns = [
-      (r"###\s*1\.\s*인스타그램\s*피드", "인스타그램 피드"),
-      (r"###\s*2\.\s*인스타그램\s*캐러셀", "인스타그램 캐러셀"),
-      (r"###\s*3\.\s*네이버\s*블로그", "네이버 블로그"),
-      (r"###\s*4\.\s*숏폼\s*스크립트", "숏폼 스크립트"),
-      (r"###\s*5\.\s*오늘의\s*집", "오늘의 집"),
-  ]
+    patterns = [
+        (r"###\s*1\.\s*인스타그램\s*피드", "인스타그램 피드"),
+        (r"###\s*2\.\s*인스타그램\s*캐러셀", "인스타그램 캐러셀"),
+        (r"###\s*3\.\s*네이버\s*블로그", "네이버 블로그"),
+        (r"###\s*4\.\s*숏폼\s*스크립트", "숏폼 스크립트"),
+        (r"###\s*5\.\s*오늘의\s*집", "오늘의 집"),
+    ]
 
-  found_spans = []
+    found_spans = []
 
-  for pattern, key in patterns:
-    match = re.search(pattern, content)
-    if match:
-      found_spans.append((match.start(), match.end(), key))
+    for pattern, key in patterns:
+        match = re.search(pattern, content)
+        if match:
+            found_spans.append((match.start(), match.end(), key))
 
-  found_spans.sort(key=lambda x: x[0])
+    found_spans.sort(key=lambda x: x[0])
 
-  for i in range(len(found_spans)):
-    start_pos, match_end, key = found_spans[i]
-    end_pos = found_spans[i + 1][0] if i + 1 < len(found_spans) else len(content)
+    for i in range(len(found_spans)):
+        start_pos, match_end, key = found_spans[i]
+        end_pos = found_spans[i + 1][0] if i + 1 < len(found_spans) else len(content)
 
-    raw_text = content[match_end:end_pos]
-    lines = raw_text.split("\n", 1)
-    if len(lines) > 1:
-      sections[key] = lines[1].strip()
-    else:
-      sections[key] = raw_text.strip()
+        raw_text = content[match_end:end_pos]
+        lines = raw_text.split("\n", 1)
+        if len(lines) > 1:
+            sections[key] = lines[1].strip()
+        else:
+            sections[key] = raw_text.strip()
 
-  return sections
+    return sections
 
 
 # -------------------------------------------------------------------
 # 메인화면: 입력폼
 # -------------------------------------------------------------------
 if api_key:
-  client = genai.Client(api_key=api_key)
-  suffix = st.session_state.input_key_suffix
+    client = genai.Client(api_key=api_key)
+    suffix = st.session_state.input_key_suffix
 
-  # 상단 컨트롤 (초기화 버튼)
-  col_title, col_clear = st.columns([4, 1])
-  with col_clear:
-    if st.button("🧹 입력 내용 초기화", on_click=clear_inputs):
-      st.rerun()
+    # 상단 컨트롤 (초기화 버튼)
+    col_title, col_clear = st.columns([4, 1])
+    with col_clear:
+        if st.button("🧹 입력 내용 초기화", on_click=clear_inputs):
+            st.rerun()
 
-  topic = st.text_input(
-      "1. 콘텐츠 제목 / 주제를 입력하세요",
-      placeholder="예: [사용후기] 줄즈 에어2 유모차 & 다이치 카시트 내돈내산 추천",
-      key=f"topic_{suffix}",
-  )
-  uploaded_files = st.file_uploader(
-      "2. 사진 또는 동영상을 업로드하세요 (복수 선택 가능)",
-      type=["jpg", "jpeg", "png", "mp4"],
-      accept_multiple_files=True,
-      key=f"files_{suffix}",
-  )
-  must_include = st.text_area(
-      "3. 내용 작성 시 꼭 고려하거나 포함해야 할 사항을 입력하세요",
-      placeholder=(
-          "예: 온누리상품권 10~15% 할인 구매 꿀팁, 어댑터 리콜 대응에 감동받은"
-          " 비하인드, 등받이 각도나 범퍼바 별도구매 등 아쉬운 점"
-      ),
-      key=f"must_{suffix}",
-  )
+    topic = st.text_input(
+        "1. 콘텐츠 제목 / 주제를 입력하세요",
+        placeholder="예: [사용후기] 줄즈 에어2 유모차 & 다이치 카시트 내돈내산 추천",
+        key=f"topic_{suffix}",
+    )
+    uploaded_files = st.file_uploader(
+        "2. 사진 또는 동영상을 업로드하세요 (복수 선택 가능)",
+        type=["jpg", "jpeg", "png", "mp4"],
+        accept_multiple_files=True,
+        key=f"files_{suffix}",
+    )
+    must_include = st.text_area(
+        "3. 내용 작성 시 꼭 고려하거나 포함해야 할 사항을 입력하세요",
+        placeholder=(
+            "예: 온누리상품권 10~15% 할인 구매 꿀팁, 어댑터 리콜 대응에 감동받은"
+            " 비하인드, 등받이 각도나 범퍼바 별도구매 등 아쉬운 점"
+        ),
+        key=f"must_{suffix}",
+    )
 
-  if st.button("🚀 전체 플랫폼 콘텐츠 생성하기"):
-    if not topic:
-      st.warning("제목/주제를 입력해주세요!")
-    else:
-      media_inputs = []
-      temp_files = []
+    if st.button("🚀 전체 플랫폼 콘텐츠 생성하기"):
+        if not topic:
+            st.warning("제목/주제를 입력해주세요!")
+        else:
+            media_inputs = []
+            temp_files = []
 
-      with st.spinner("미디어 파일 분석 및 준비 중..."):
-        if uploaded_files:
-          for file in uploaded_files:
-            if file.type.startswith("image"):
-              media_inputs.append(Image.open(file))
-            elif file.type.startswith("video"):
-              with tempfile.NamedTemporaryFile(
-                  delete=False, suffix=".mp4"
-              ) as tmp_file:
-                tmp_file.write(file.read())
-                tmp_file_path = tmp_file.name
-                temp_files.append(tmp_file_path)
+            with st.spinner("미디어 파일 분석 및 준비 중..."):
+                if uploaded_files:
+                    for file in uploaded_files:
+                        if file.type.startswith("image"):
+                            media_inputs.append(Image.open(file))
+                        elif file.type.startswith("video"):
+                            with tempfile.NamedTemporaryFile(
+                                delete=False, suffix=".mp4"
+                            ) as tmp_file:
+                                tmp_file.write(file.read())
+                                tmp_file_path = tmp_file.name
+                                temp_files.append(tmp_file_path)
 
-              uploaded_gemini_file = client.files.upload(file=tmp_file_path)
-              media_inputs.append(uploaded_gemini_file)
+                            uploaded_gemini_file = client.files.upload(file=tmp_file_path)
+                            media_inputs.append(uploaded_gemini_file)
 
-      with st.spinner("AI가 채널별 맞춤 원고를 작성하고 있습니다..."):
-        prompt = f"""
+            with st.spinner("AI가 채널별 맞춤 원고를 작성하고 있습니다..."):
+                prompt = f"""
                 너는 인스타그램, 네이버 블로그, 숏폼(릴스/클립/숏츠), 오늘의집 등 다양한 채널을 운영하는 전문 인플루언서 에이전트야.
                 제공된 사진/동영상들의 전체적인 감성, 색감, 장소, 분위기, 스타일을 세밀하게 분석하고 이를 반영해서 각 플랫폼 스타일에 맞게 글을 작성해줘.
 
@@ -269,123 +280,123 @@ if api_key:
                 - 감성적인 공간 스타일링 노트, 인테리어/동선과의 조화, 가벼운 추천글 톤앤매너
                 """
 
-        try:
-          input_data = [prompt] + media_inputs
-          response = client.models.generate_content(
-              model="gemini-3.6-flash", contents=input_data
-          )
+                try:
+                    input_data = [prompt] + media_inputs
+                    response = client.models.generate_content(
+                        model="gemini-3.6-flash", contents=input_data
+                    )
 
-          st.session_state.generated_result = response.text
-          st.session_state.last_topic = topic
-        except Exception as e:
-          st.error(f"콘텐츠 생성 중 오류가 발생했습니다: {e}")
-        finally:
-          for tmp_path in temp_files:
-            if os.path.exists(tmp_path):
-              os.remove(tmp_path)
+                    st.session_state.generated_result = response.text
+                    st.session_state.last_topic = topic
+                except Exception as e:
+                    st.error(f"콘텐츠 생성 중 오류가 발생했습니다: {e}")
+                finally:
+                    for tmp_path in temp_files:
+                        if os.path.exists(tmp_path):
+                            os.remove(tmp_path)
 
-  # -------------------------------------------------------------------
-  # 결과물 표시, 원고 복사, DB 저장 관리
-  # -------------------------------------------------------------------
-  if st.session_state.generated_result:
-    st.markdown("---")
-    st.subheader("📄 전체 원고 결과물")
+    # -------------------------------------------------------------------
+    # 결과물 표시, 원고 복사, DB 저장 관리
+    # -------------------------------------------------------------------
+    if st.session_state.generated_result:
+        st.markdown("---")
+        st.subheader("📄 전체 원고 결과물")
 
-    # 원본 원고 전체 화면 표시
-    st.markdown(st.session_state.generated_result)
+        # 원본 원고 전체 화면 표시
+        st.markdown(st.session_state.generated_result)
 
-    # ---------------------------------------------------------------
-    # 플랫폼별 복사 박스 기능
-    # ---------------------------------------------------------------
-    st.markdown("---")
-    st.subheader("📋 플랫폼별 원고 간편 복사")
-    st.caption(
-        "각 코드 상자 우측 상단의 **'복사(Copy)' 버튼**을 누르면 해당 플랫폼"
-        " 원고만 즉시 복사됩니다."
-    )
-
-    parsed_sections = parse_sections(st.session_state.generated_result)
-
-    tab1, tab2, tab3, tab4, tab5 = st.tabs([
-        "📸 인스타 피드",
-        "🎠 인스타 캐러셀",
-        "📝 네이버 블로그",
-        "🎬 숏폼 스크립트",
-        "🏠 오늘의집",
-    ])
-
-    with tab1:
-      st.code(
-          parsed_sections["인스타그램 피드"]
-          or st.session_state.generated_result,
-          language=None,
-      )
-    with tab2:
-      st.code(
-          parsed_sections["인스타그램 캐러셀"]
-          or st.session_state.generated_result,
-          language=None,
-      )
-    with tab3:
-      st.code(
-          parsed_sections["네이버 블로그"]
-          or st.session_state.generated_result,
-          language=None,
-      )
-    with tab4:
-      st.code(
-          parsed_sections["숏폼 스크립트"]
-          or st.session_state.generated_result,
-          language=None,
-      )
-    with tab5:
-      st.code(
-          parsed_sections["오늘의 집"] or st.session_state.generated_result,
-          language=None,
-      )
-
-    # ---------------------------------------------------------------
-    # 하단: 저장 및 피드백 수정
-    # ---------------------------------------------------------------
-    st.markdown("---")
-    col1, col2 = st.columns(2)
-
-    with col1:
-      st.subheader("💾 원고 저장 관리")
-
-      if st.button("📌 원고 목록(DB)에 저장하기"):
-        save_history(
-            st.session_state.last_topic, st.session_state.generated_result
+        # ---------------------------------------------------------------
+        # 플랫폼별 복사 박스 기능
+        # ---------------------------------------------------------------
+        st.markdown("---")
+        st.subheader("📋 플랫폼별 원고 간편 복사")
+        st.caption(
+            "각 코드 상자 우측 상단의 **'복사(Copy)' 버튼**을 누르면 해당 플랫폼"
+            " 원고만 즉시 복사됩니다."
         )
-        st.success(
-            "사이드바 '저장된 원고 목록'에 데이터베이스로 안전하게"
-            " 저장되었습니다! (재접속 후에도 보관됨)"
-        )
-        st.rerun()
 
-      st.write("")
-      st.download_button(
-          label="📄 전체 원고 텍스트(.txt) 다운로드",
-          data=st.session_state.generated_result,
-          file_name=f"{st.session_state.last_topic}_원고.txt",
-          mime="text/plain",
-      )
+        parsed_sections = parse_sections(st.session_state.generated_result)
 
-    with col2:
-      st.subheader("🔄 피드백 반영 / 보완하여 재생성")
-      refine_feedback = st.text_area(
-          "보완하고 싶은 점을 적어주세요",
-          placeholder=(
-              "예: 블로그 글에 사진 들어갈 위치를 2개 더 늘려줘, 인스타 해시태그를"
-              " 더 많이 뽑아줘 등"
-          ),
-          key=f"refine_{suffix}",
-      )
+        tab1, tab2, tab3, tab4, tab5 = st.tabs([
+            "📸 인스타 피드",
+            "🎠 인스타 캐러셀",
+            "📝 네이버 블로그",
+            "🎬 숏폼 스크립트",
+            "🏠 오늘의집",
+        ])
 
-      if st.button("✨ 보완점 반영하여 다시 생성하기"):
-        if refine_feedback:
-          with st.spinner("요청하신 보완사항을 반영하여 원고를 수정 중입니다..."):
-            refine_prompt = f"""
+        with tab1:
+            st.code(
+                parsed_sections["인스타그램 피드"]
+                or st.session_state.generated_result,
+                language=None,
+            )
+        with tab2:
+            st.code(
+                parsed_sections["인스타그램 캐러셀"]
+                or st.session_state.generated_result,
+                language=None,
+            )
+        with tab3:
+            st.code(
+                parsed_sections["네이버 블로그"]
+                or st.session_state.generated_result,
+                language=None,
+            )
+        with tab4:
+            st.code(
+                parsed_sections["숏폼 스크립트"]
+                or st.session_state.generated_result,
+                language=None,
+            )
+        with tab5:
+            st.code(
+                parsed_sections["오늘의 집"] or st.session_state.generated_result,
+                language=None,
+            )
+
+        # ---------------------------------------------------------------
+        # 하단: 저장 및 피드백 수정
+        # ---------------------------------------------------------------
+        st.markdown("---")
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.subheader("💾 원고 저장 관리")
+
+            if st.button("📌 원고 목록(DB)에 저장하기"):
+                save_history(
+                    st.session_state.last_topic, st.session_state.generated_result
+                )
+                st.success(
+                    "사이드바 '저장된 원고 목록'에 데이터베이스로 안전하게"
+                    " 저장되었습니다! (재접속 후에도 보관됨)"
+                )
+                st.rerun()
+
+            st.write("")
+            st.download_button(
+                label="📄 전체 원고 텍스트(.txt) 다운로드",
+                data=st.session_state.generated_result,
+                file_name=f"{st.session_state.last_topic}_원고.txt",
+                mime="text/plain",
+            )
+
+        with col2:
+            st.subheader("🔄 피드백 반영 / 보완하여 재생성")
+            refine_feedback = st.text_area(
+                "보완하고 싶은 점을 적어주세요",
+                placeholder=(
+                    "예: 블로그 글에 사진 들어갈 위치를 2개 더 늘려줘, 인스타 해시태그를"
+                    " 더 많이 뽑아줘 등"
+                ),
+                key=f"refine_{suffix}",
+            )
+
+            if st.button("✨ 보완점 반영하여 다시 생성하기"):
+                if refine_feedback:
+                    with st.spinner("요청하신 보완사항을 반영하여 원고를 수정 중입니다..."):
+                        refine_prompt = f"""
                         이전 작성한 원고에서 아래 요청사항을 반영하여 전체 내용을 수정해줘:
 
                         [기존 주제]: {st.session_state.last_topic}
@@ -399,12 +410,12 @@ if api_key:
                         [이전 원고 내용]:
                         {st.session_state.generated_result}
                         """
-            response = client.models.generate_content(
-                model="gemini-3.6-flash", contents=refine_prompt
-            )
-            st.session_state.generated_result = response.text
-            st.rerun()
-        else:
-          st.warning("보완할 내용을 입력해주세요!")
+                        response = client.models.generate_content(
+                            model="gemini-3.6-flash", contents=refine_prompt
+                        )
+                        st.session_state.generated_result = response.text
+                        st.rerun()
+                else:
+                    st.warning("보완할 내용을 입력해주세요!")
 else:
-  st.info("왼쪽 사이드바에 Gemini API 키를 입력해 주세요.")
+    st.info("왼쪽 사이드바에 Gemini API 키를 입력해 주세요.")
