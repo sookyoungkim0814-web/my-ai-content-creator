@@ -3,20 +3,37 @@ import google.generativeai as genai
 import re
 
 # ==========================================================
-# 1. 페이지 기본 설정 및 커스텀 CSS (나눔고딕, 글씨크기 15px)
+# 1. 페이지 기본 설정 및 초기 커스텀 CSS (나눔고딕 15px & 겹침 버그 수정)
 # ==========================================================
 st.set_page_config(page_title="멀티 플랫폼 AI 원고 생성기", layout="wide")
 
-# CSS 적용: 나눔고딕 폰트 및 글자 크기 15px 설정
+# 초기에 설정했던 나눔고딕 15px 스타일 복원 (버그 발생 요소 제외 지정)
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700;800&display=swap');
     
-    html, body, [class*="css"], div, p, span, input, textarea {
+    /* 전체 폰트 적용 */
+    html, body, [class*="css"], [class*="st-"] {
         font-family: 'Nanum Gothic', sans-serif !important;
-        font-size: 15px !important;
     }
     
+    /* 본문, 입력창, 버튼 폰트 크기 15px 고정 */
+    p, span, div, input, textarea, button, label {
+        font-size: 15px !important;
+    }
+
+    /* 겹침 버그 방지: 파일 업로더 내 특정 버튼 크기 예외 처리 */
+    [data-testid="stFileUploader"] button p {
+        font-size: 13px !important;
+    }
+    
+    /* 탭 및 코드 복사 창 가독성 강화 (글자 크기 15px, 줄간격 쾌적하게) */
+    .stCodeBlock code, .stCodeBlock div {
+        font-size: 15px !important;
+        line-height: 1.7 !important;
+        font-family: 'Nanum Gothic', monospace !important;
+    }
+
     /* 소제목 및 강조 텍스트 BOLD 스타일 */
     .blog-subtitle {
         font-weight: 700 !important;
@@ -65,25 +82,27 @@ SYSTEM_PROMPT = """
 
 1. **네이버 블로그**:
    - 친근하고 정성스러운 실제 사용 후기 어조 ('~했어요', '~입니다', 이모지 적절히 활용)
-   - 숫자 소제목(이모지 활용 및 **강조**)으로 구조화 (예: **1. 언박싱 후기 📦**)
-   - 사진 가이드 포함 (예: 📷 [추천 사진: 사용 모습])
-   - 경험 위주 작성, 글자수 1,000~1,500자
+   - 숫자 소제목(이모지 활용 및 BOLD **소제목**)으로 구조화
+   - 각 내용 중 추천 사진 가이드 작성 (예: 📷 [추천 사진: 한 손으로 폴딩하는 컷])
+   - 검색 노출 및 가독성을 높이기 위한 정돈된 문단 구성
+   - 경험 위주로 내용 작성 (단순 제품 소개 시 경험 억지 작성 금지)
+   - 공백 제외 글자수 1,000자~1,500자 분량
 
 2. **인스타그램 피드**:
-   - 감성적/소통형 캡션, 줄바꿈 적극 활용
-   - 관련 인기 태그(#) 15~20개 포함
+   - 가독성 높은 감성적/소통형 캡션, 줄바꿈 활용, 적절한 이모지
+   - 하단에 관련 인기 태그(#) 15~20개 포함
 
 3. **인스타그램 캐러셀 (카드뉴스)**:
-   - 슬라이드 1~10장 구성안 (타이틀, 주요 내용, 마지막 CTA 포함)
+   - 슬라이드별(5장~10장) 구성안 제공 (슬라이드 1: 타이틀 / 2~9: 장점 요약 / 마지막: CTA)
 
 4. **인스타그램 릴스 / 숏츠**:
    - 15~30초 숏폼 영상 대본 ([시각 자료 / 자막 / 나레이션])
 
 5. **오늘의집 피드**:
-   - 감성적인 리빙/육아 라이프스타일 톤앤매너, 브랜드/해시태그 포함
+   - 감성적인 리빙/육아 라이프스타일 톤앤매너, 공간/스타일/사용성 위주, 브랜드 및 해시태그 포함
 
-응답은 반드시 각 플랫폼 구분이 명확하도록 아래 형식(대괄호 구분)을 맞춰주세요:
-
+응답은 반드시 아래 구분을 정확히 지켜서 출력하세요:
+---
 [네이버 블로그]
 (원고 내용)
 
@@ -98,6 +117,7 @@ SYSTEM_PROMPT = """
 
 [오늘의집 피드]
 (원고 내용)
+---
 """
 
 # ==========================================================
@@ -199,7 +219,7 @@ with right_col:
 
         st.markdown("---")
         
-        # 플랫폼별 텍스트 파싱 (분할 추출)
+        # 플랫폼별 텍스트 파싱
         raw_text = st.session_state.generated_contents
         platforms = ["네이버 블로그", "인스타그램 피드", "인스타그램 캐러셀", "인스타그램 릴스/숏츠", "오늘의집 피드"]
         parsed_contents = {}
@@ -209,13 +229,12 @@ with right_col:
             match = re.search(pattern, raw_text, re.DOTALL)
             parsed_contents[platform] = match.group(1).strip() if match else "생성된 내용이 없습니다."
 
-        # 탭 형태로 개별 플랫폼 원고 및 복사 기능 제공
+        # 탭 형태로 플랫폼별 원고 출력 (복사 버튼 내장)
         tabs = st.tabs([f"📌 {p}" for p in platforms])
         
         for i, platform in enumerate(platforms):
             with tabs[i]:
-                st.caption(f"Below is the tailored copy for {platform}. Click the copy button in the top right of the text block to copy instantly.")
-                # 개별 복사용 코드 블록 (우측 상단 클릭 한 번으로 바로 복사 가능)
+                st.caption("우측 상단의 복사 버튼(📋 아이콘)을 누르면 원고 전체가 복사됩니다.")
                 st.code(parsed_contents[platform], language="markdown")
 
     else:
