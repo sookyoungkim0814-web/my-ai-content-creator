@@ -132,7 +132,7 @@ if st.button("🚀 5개 플랫폼 원고 한 번에 생성하기", type="primary
         st.warning("제품 이름과 주요 특징을 입력해주세요.")
     else:
         with st.spinner("AI가 상세 가이드라인에 맞추어 5개 플랫폼 원고를 생성 중입니다..."):
-            model = genai.GenerativeModel("gemini-1.5-flash")
+            model = genai.GenerativeModel("gemini-3.6-flash")
             
             user_prompt = f"""
             - 제품/주제: {product_name}
@@ -177,7 +177,7 @@ if st.session_state.generated_contents:
             st.warning("보완할 내용을 입력해주세요.")
         else:
             with st.spinner("피드백을 반영하여 원고를 다시 작성 중입니다..."):
-                model = genai.GenerativeModel("gemini-1.5-flash")
+                model = genai.GenerativeModel("gemini-3.6-flash")
                 refine_prompt = f"""
                 이전 생성 원고:
                 {st.session_state.generated_contents}
