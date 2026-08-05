@@ -3,56 +3,9 @@ import google.generativeai as genai
 import re
 
 # ==========================================================
-# 1. 페이지 기본 설정 및 CSS (맑은 고딕 적용 + 아이콘 깨짐 완전 방지)
+# 1. 페이지 기본 설정 (커스텀 CSS 완전히 제거)
 # ==========================================================
 st.set_page_config(page_title="멀티 플랫폼 AI 원고 생성기", layout="wide")
-
-st.markdown("""
-    <style>
-    /* 맑은 고딕 폰트 적용 (아이콘 요소를 건드리지 않도록 명확한 태그 지정) */
-    p, span, label, input, textarea, button, h1, h2, h3, h4, .stMarkdown {
-        font-family: 'Malgun Gothic', '맑은 고딕', sans-serif !important;
-    }
-    
-    /* 제목(Title / Subheader) 크기 대폭 확대 및 강조 */
-    h1 {
-        font-size: 2.3rem !important;
-        font-weight: bold !important;
-        color: #111111 !important;
-        padding-bottom: 10px;
-    }
-    
-    h2, h3, [data-testid="stSubheader"] {
-        font-size: 1.5rem !important;
-        font-weight: bold !important;
-        color: #222222 !important;
-    }
-    
-    /* 입력창 라벨 및 본문 글자 크기 조정 */
-    .stTextInput label, .stTextArea label, .stFileUploader label {
-        font-size: 16px !important;
-        font-weight: bold !important;
-    }
-    
-    .stTextInput input, .stTextArea textarea {
-        font-size: 15px !important;
-        line-height: 1.6 !important;
-    }
-
-    /* 원고 결과창 글씨 크기 확대 및 맑은 고딕 적용 */
-    .stCodeBlock code, .stCodeBlock div {
-        font-size: 16px !important;
-        line-height: 1.8 !important;
-        font-family: 'Malgun Gothic', '맑은 고딕', sans-serif !important;
-    }
-    
-    /* 탭 메뉴 글씨 크기 강조 */
-    button[data-baseweb="tab"] div p {
-        font-size: 16px !important;
-        font-weight: bold !important;
-    }
-    </style>
-""", unsafe_allow_html=True)
 
 st.title("📱 멀티 플랫폼 AI 원고 생성기")
 st.caption("하나의 정보로 네이버 블로그, 인스타 피드/캐러셀/릴스·숏츠, 오늘의집 피드 원고를 동시에 생성합니다.")
