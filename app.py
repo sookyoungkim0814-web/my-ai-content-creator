@@ -43,8 +43,6 @@ SYSTEM_PROMPT = """
 당신은 SNS 콘텐츠 전문 마케팅 카피라이터입니다. 
 제공된 정보를 바탕으로 아래 5가지 플랫폼에 최적화된 원고를 일괄 작성해주세요.
 
-반드시 아래에 명시된 5개 플랫폼 헤더 양식을 단 하나도 빠짐없이 exact match로 작성해야 합니다.
-
 1. **네이버 블로그**:
    - 친근하고 정성스러운 실제 사용 후기 어조 ('~했어요', '~입니다', 이모지 적절히 활용)
    - 숫자 소제목(이모지 활용 및 BOLD **소제목**)으로 구조화
@@ -66,7 +64,7 @@ SYSTEM_PROMPT = """
 5. **오늘의집 피드**:
    - 감성적인 리빙/육아 라이프스타일 톤앤매너, 공간/스타일/사용성 위주, 브랜드 및 해시태그 포함
 
-응답은 반드시 아래 5개 구분 태그를 정확히 사용하여 출력하세요:
+응답은 반드시 아래 5개 구분 태그를 정확히 사용하여 출력하세요. 각 태그 앞뒤에 쓸데없는 문장을 덧붙이지 마세요:
 
 [네이버 블로그]
 (원고 내용)
@@ -162,25 +160,33 @@ with main_tab1:
 
             st.markdown("---")
             
-            # 플랫폼별 텍스트 파싱
+            # 플랫폼별 텍스트 파싱 (안정적인 추출 로직)
             raw_text = st.session_state.generated_contents
             platforms = ["네이버 블로그", "인스타그램 피드", "인스타그램 캐러셀", "인스타그램 릴스/숏츠", "오늘의집 피드"]
             parsed_contents = {}
             
             for i, platform in enumerate(platforms):
-                next_pattern = "|".join([rf"\[{re.escape(p)}\]" for p in platforms[i+1:]])
-                pattern = rf"\[{re.escape(platform)}\]\s*(.*?)(?={next_pattern}|\Z)"
+                if i < len(platforms) - 1:
+                    next_platforms = platforms[i+1:]
+                    next_pattern = "|".join([rf"\[{re.escape(p)}\]" for p in next_platforms])
+                    pattern = rf"\[{re.escape(platform)}\]\s*(.*?)(?={next_pattern}|\Z)"
+                else:
+                    pattern = rf"\[{re.escape(platform)}\]\s*(.*)"
+                
                 match = re.search(pattern, raw_text, re.DOTALL)
-                parsed_contents[platform] = match.group(1).strip() if match else "생성 중 오류가 발생했거나 내용이 없습니다."
+                parsed_contents[platform] = match.group(1).strip() if match else "생성된 내용이 없습니다."
 
             # 결과 탭 구성
             result_tabs = st.tabs(["📋 전체 원고"] + [f"📌 {p}" for p in platforms])
             
-            # 1) 전체 원고 탭 (클립보드/코드 블록 없이 일반 마크다운 텍스트로 출력)
+            # 1) 전체 원고 탭 (플랫폼 제목 강조 + 구분선 적용)
             with result_tabs[0]:
-                st.markdown(raw_text)
+                for platform in platforms:
+                    st.markdown(f"## 📌 {platform}")
+                    st.markdown(parsed_contents[platform])
+                    st.markdown("---")
                 
-            # 2) 각 플랫폼별 탭 (기존 복사 가능 코드 상자 유지)
+            # 2) 각 플랫폼별 탭 (복사 전용 코드 상자 유지)
             for i, platform in enumerate(platforms):
                 with result_tabs[i+1]:
                     st.caption(f"우측 상단의 복사 버튼(📋 아이콘)을 누르면 [{platform}] 원고가 복사됩니다.")
