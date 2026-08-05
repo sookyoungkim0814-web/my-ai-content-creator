@@ -9,10 +9,27 @@ st.set_page_config(page_title="멀티 플랫폼 AI 원고 생성기", layout="wi
 st.title("📱 멀티 플랫폼 AI 원고 생성기")
 st.caption("하나의 정보로 네이버 블로그, 인스타 피드/캐러셀/릴스·숏츠, 오늘의집 피드 원고를 동시에 생성합니다.")
 
-# 사이드바 API 키 입력
-api_key = st.sidebar.text_input("Gemini API Key를 입력하세요", type="password")
-if api_key:
-    genai.configure(api_key=api_key)
+# ----------------------------------------------------------
+# 🔑 API Key 불러오기 (Streamlit Secrets 1순위 적용)
+# ----------------------------------------------------------
+# Secrets에서 GEMINI_API_KEY 자동 탐색
+secret_api_key = st.secrets.get("GEMINI_API_KEY", "")
+
+# 사이드바 입력창 (Secrets 키가 없을 경우 직접 입력 가능하도록 예비 구성)
+user_api_key = st.sidebar.text_input(
+    "Gemini API Key (Secrets에 설정된 경우 빈칸 유지 가능)", 
+    value="", 
+    type="password"
+)
+
+# 최종적으로 사용할 API Key 선택 (직접 입력값 > Secrets 값)
+final_api_key = user_api_key if user_api_key else secret_api_key
+
+if final_api_key:
+    genai.configure(api_key=final_api_key)
+    st.sidebar.success("✅ API Key가 설정되었습니다.")
+else:
+    st.sidebar.warning("⚠️ API Key가 설정되지 않았습니다.")
 
 # 세션 상태 초기화
 if "generated_contents" not in st.session_state:
@@ -109,8 +126,8 @@ SYSTEM_PROMPT = """
 # 4. 원고 생성 버튼 동작
 # ==========================================================
 if st.button("🚀 5개 플랫폼 원고 한 번에 생성하기", type="primary", use_container_width=True):
-    if not api_key:
-        st.error("API Key를 입력해주세요.")
+    if not final_api_key:
+        st.error("API Key가 설정되어 있지 않습니다. Secrets 설정 또는 사이드바를 확인해주세요.")
     elif not product_name or not main_features:
         st.warning("제품 이름과 주요 특징을 입력해주세요.")
     else:
@@ -139,10 +156,8 @@ if st.session_state.generated_contents:
     st.markdown("---")
     st.subheader("📄 생성된 원고 결과")
 
-    # 전체 원고 복사용 Textarea
     st.text_area("전체 원고 복사용 (선택 후 Ctrl+C)", value=st.session_state.generated_contents, height=350)
     
-    # 수동 저장 버튼 (클릭 시에만 저장)
     col_save, _ = st.columns([3, 7])
     with col_save:
         if st.button("💾 이 원고를 히스토리에 저장하기", use_container_width=True):
@@ -154,7 +169,6 @@ if st.session_state.generated_contents:
 
     st.markdown("---")
     
-    # 피드백 반영 및 재생성
     st.subheader("🔧 원고 보완 및 재생성")
     feedback = st.text_area("보완하고 싶은 내용을 입력하세요", key="feedback_text", placeholder="예: 네이버 블로그에 사진 추천 위치를 더 추가해주고, 인스타 릴스 대본 씬을 더 직관적으로 바꿔줘.")
     
