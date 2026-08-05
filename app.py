@@ -3,43 +3,39 @@ import google.generativeai as genai
 import re
 
 # ==========================================================
-# 1. 페이지 기본 설정 및 초기 커스텀 CSS (나눔고딕 15px & 겹침 버그 수정)
+# 1. 페이지 기본 설정 및 초창기 CSS 스타일 복원 (나눔고딕 15px & BOLD 소제목)
 # ==========================================================
 st.set_page_config(page_title="멀티 플랫폼 AI 원고 생성기", layout="wide")
 
-# 초기에 설정했던 나눔고딕 15px 스타일 복원 (버그 발생 요소 제외 지정)
+# 맨 처음 요청하셨던 스타일 그대로 재설정 (겹침 버그만 예외 처리)
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700;800&display=swap');
     
-    /* 전체 폰트 적용 */
-    html, body, [class*="css"], [class*="st-"] {
+    /* 나눔고딕 폰트 및 15px 기본 글씨 크기 설정 */
+    html, body, [class*="css"], div, p, span, input, textarea {
         font-family: 'Nanum Gothic', sans-serif !important;
-    }
-    
-    /* 본문, 입력창, 버튼 폰트 크기 15px 고정 */
-    p, span, div, input, textarea, button, label {
         font-size: 15px !important;
     }
-
-    /* 겹침 버그 방지: 파일 업로더 내 특정 버튼 크기 예외 처리 */
-    [data-testid="stFileUploader"] button p {
-        font-size: 13px !important;
-    }
     
-    /* 탭 및 코드 복사 창 가독성 강화 (글자 크기 15px, 줄간격 쾌적하게) */
-    .stCodeBlock code, .stCodeBlock div {
-        font-size: 15px !important;
-        line-height: 1.7 !important;
-        font-family: 'Nanum Gothic', monospace !important;
-    }
-
     /* 소제목 및 강조 텍스트 BOLD 스타일 */
     .blog-subtitle {
         font-weight: 700 !important;
         font-size: 17px !important;
         margin-top: 15px;
         margin-bottom: 5px;
+    }
+
+    /* 겹침 버그 방지 예외 처리 (파일 업로더 내부 텍스트) */
+    [data-testid="stFileUploader"] button p {
+        font-size: 13px !important;
+    }
+
+    /* 텍스트 복사 및 탭 창 내부 가독성 유지 */
+    .stCodeBlock code, .stCodeBlock div {
+        font-size: 15px !important;
+        line-height: 1.7 !important;
+        font-family: 'Nanum Gothic', monospace !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -74,7 +70,7 @@ def reset_all():
     st.session_state.generated_contents = None
 
 # ==========================================================
-# 2. 프롬프트 시스템 설정
+# 2. 프롬프트 시스템 설정 (5개 플랫폼 세부 지침 준수)
 # ==========================================================
 SYSTEM_PROMPT = """
 당신은 SNS 콘텐츠 전문 마케팅 카피라이터입니다. 
