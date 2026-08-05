@@ -23,18 +23,26 @@ if final_api_key:
 else:
     st.sidebar.warning("⚠️ API Key를 확인해주세요.")
 
-# 세션 상태 초기화
+# ----------------------------------------------------------
+# 세션 상태 초기화 (saved_history 보호)
+# ----------------------------------------------------------
 if "generated_contents" not in st.session_state:
     st.session_state.generated_contents = None
 if "saved_history" not in st.session_state:
     st.session_state.saved_history = []
+if "file_uploader_key" not in st.session_state:
+    st.session_state.file_uploader_key = 0
 
-def reset_all():
-    st.session_state.product_name = ""
-    st.session_state.main_features = ""
-    st.session_state.extra_info = ""
-    st.session_state.feedback_text = ""
+# 입력창, 업로드 파일, 현재 결과를 안전하게 초기화하는 함수
+def reset_inputs_only():
+    st.session_state["product_name"] = ""
+    st.session_state["main_features"] = ""
+    st.session_state["extra_info"] = ""
+    st.session_state["feedback_text"] = ""
     st.session_state.generated_contents = None
+    # 파일 업로더 초기화를 위해 키 변경
+    st.session_state.file_uploader_key += 1
+    st.rerun()
 
 # ==========================================================
 # 2. 프롬프트 시스템 설정
@@ -64,7 +72,7 @@ SYSTEM_PROMPT = """
 5. **오늘의집 피드**:
    - 감성적인 리빙/육아 라이프스타일 톤앤매너, 공간/스타일/사용성 위주, 브랜드 및 해시태그 포함
 
-응답은 반드시 아래 5개 구분 태그를 정확히 사용하여 출력하세요. 각 태그 앞뒤에 쓸데없는 문장을 덧붙이지 마세요:
+응답은 반드시 아래 5개 구분 태그를 정확히 사용하여 출력하세요:
 
 [네이버 블로그]
 (원고 내용)
@@ -83,7 +91,7 @@ SYSTEM_PROMPT = """
 """
 
 # ==========================================================
-# 3. 메인 탭 구성 (1. 원고 생성 및 결과 / 2. 저장된 원고 관리)
+# 3. 메인 탭 구성
 # ==========================================================
 main_tab1, main_tab2 = st.tabs(["✍️ 원고 생성 및 결과", "📚 저장된 원고 관리"])
 
@@ -99,12 +107,13 @@ with main_tab1:
         
         col_reset, _ = st.columns([4, 6])
         with col_reset:
-            st.button("🔄 전체 초기화", on_click=reset_all, use_container_width=True)
+            st.button("🔄 전체 초기화", on_click=reset_inputs_only, use_container_width=True)
 
         uploaded_files = st.file_uploader(
             "📷 참고 이미지 / 동영상 업로드 (선택)", 
             type=["jpg", "jpeg", "png", "mp4", "mov"], 
-            accept_multiple_files=True
+            accept_multiple_files=True,
+            key=f"file_uploader_{st.session_state.file_uploader_key}"
         )
 
         product_name = st.text_input("제품/장소/주제 이름", key="product_name", placeholder="예: 줄즈 에어2 휴대용 유모차")
@@ -118,7 +127,7 @@ with main_tab1:
                 st.warning("제품 이름과 주요 특징을 입력해주세요.")
             else:
                 with st.spinner("AI가 5개 플랫폼 원고를 생성 중입니다..."):
-                    model = genai.GenerativeModel("gemini-3.6-flash")
+                    model = genai.GenerativeModel("gemini-1.5-flash")
                     user_prompt = f"- 제품/주제: {product_name}\n- 주요 특징: {main_features}\n- 추가 정보: {extra_info}"
                     
                     contents = [SYSTEM_PROMPT, user_prompt]
@@ -140,7 +149,7 @@ with main_tab1:
                     st.warning("보완할 내용을 입력해주세요.")
                 else:
                     with st.spinner("피드백을 반영하여 다시 작성 중입니다..."):
-                        model = genai.GenerativeModel("gemini-3.6-flash")
+                        model = genai.GenerativeModel("gemini-1.5-flash")
                         refine_prompt = f"이전 원고:\n{st.session_state.generated_contents}\n\n피드백:\n{feedback}\n\n위 피드백 5개 플랫폼 모두에 반영해서 다시 작성해주세요."
                         response = model.generate_content([SYSTEM_PROMPT, refine_prompt])
                         st.session_state.generated_contents = response.text
@@ -156,11 +165,11 @@ with main_tab1:
                     "product_name": product_name if product_name else "무제",
                     "content": st.session_state.generated_contents
                 })
-                st.success("히스토리에 저장되었습니다!")
+                st.success("히스토리에 저장되었습니다! '저장된 원고 관리' 탭에서 확인하세요.")
 
             st.markdown("---")
             
-            # 플랫폼별 텍스트 파싱 (안정적인 추출 로직)
+            # 플랫폼별 텍스트 파싱
             raw_text = st.session_state.generated_contents
             platforms = ["네이버 블로그", "인스타그램 피드", "인스타그램 캐러셀", "인스타그램 릴스/숏츠", "오늘의집 피드"]
             parsed_contents = {}
@@ -179,14 +188,14 @@ with main_tab1:
             # 결과 탭 구성
             result_tabs = st.tabs(["📋 전체 원고"] + [f"📌 {p}" for p in platforms])
             
-            # 1) 전체 원고 탭 (플랫폼 제목 강조 + 구분선 적용)
+            # 1) 전체 원고 탭
             with result_tabs[0]:
                 for platform in platforms:
                     st.markdown(f"## 📌 {platform}")
                     st.markdown(parsed_contents[platform])
                     st.markdown("---")
                 
-            # 2) 각 플랫폼별 탭 (복사 전용 코드 상자 유지)
+            # 2) 각 플랫폼별 탭
             for i, platform in enumerate(platforms):
                 with result_tabs[i+1]:
                     st.caption(f"우측 상단의 복사 버튼(📋 아이콘)을 누르면 [{platform}] 원고가 복사됩니다.")
@@ -202,7 +211,7 @@ with main_tab2:
     st.subheader("📚 저장된 히스토리 관리")
     
     if not st.session_state.saved_history:
-        st.info("저장된 원고가 없습니다. '원고 생성 및 결과' 탭에서 생성 후 [💾 원고 저장하기] 버튼을 눌러보세요.")
+        st.info("저장된 원고가 없습니다. '원고 생성 및 결과' 탭에서 원고를 만든 뒤 [💾 원고 저장하기] 버튼을 눌러보세요.")
     else:
         with st.form("history_delete_form"):
             delete_indices = []
