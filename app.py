@@ -132,7 +132,7 @@ def generate_content(topic, target, platform, tone):
     3. 적절한 가독성을 위해 줄바꿈과 이모지를 활용하세요.
     4. 해시태그가 필요한 플랫폼(인스타그램, 블로그 등)이라면 하단에 유용한 해시태그를 포함하세요.
     """
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('gemini-3.6-flash')
     response = model.generate_content(prompt)
     return response.text
 
