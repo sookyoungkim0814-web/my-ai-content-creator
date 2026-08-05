@@ -1,6 +1,7 @@
 streamlit
-google-genai
+google-generativeai
 pillow
 streamlit-clipboard
 psycopg2-binary
 sqlalchemy
+pandas
