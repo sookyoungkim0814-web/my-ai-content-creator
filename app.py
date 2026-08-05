@@ -37,7 +37,7 @@ def reset_all():
     st.session_state.generated_contents = None
 
 # ==========================================================
-# 2. 프롬프트 시스템 설정 (구분 태그 명확화)
+# 2. 프롬프트 시스템 설정
 # ==========================================================
 SYSTEM_PROMPT = """
 당신은 SNS 콘텐츠 전문 마케팅 카피라이터입니다. 
@@ -162,27 +162,25 @@ with main_tab1:
 
             st.markdown("---")
             
-            # 플랫폼별 텍스트 안전 파싱
+            # 플랫폼별 텍스트 파싱
             raw_text = st.session_state.generated_contents
             platforms = ["네이버 블로그", "인스타그램 피드", "인스타그램 캐러셀", "인스타그램 릴스/숏츠", "오늘의집 피드"]
             parsed_contents = {}
             
             for i, platform in enumerate(platforms):
-                # 다음 플랫폼 헤더 이전까지 파싱
                 next_pattern = "|".join([rf"\[{re.escape(p)}\]" for p in platforms[i+1:]])
                 pattern = rf"\[{re.escape(platform)}\]\s*(.*?)(?={next_pattern}|\Z)"
                 match = re.search(pattern, raw_text, re.DOTALL)
                 parsed_contents[platform] = match.group(1).strip() if match else "생성 중 오류가 발생했거나 내용이 없습니다."
 
-            # 결과 탭 구성 (전체 원고 + 각 플랫폼 탭)
+            # 결과 탭 구성
             result_tabs = st.tabs(["📋 전체 원고"] + [f"📌 {p}" for p in platforms])
             
-            # 1) 전체 원고 탭
+            # 1) 전체 원고 탭 (클립보드/코드 블록 없이 일반 마크다운 텍스트로 출력)
             with result_tabs[0]:
-                st.caption("우측 상단의 복사 버튼(📋 아이콘)을 누르면 5개 플랫폼 전체 원고가 복사됩니다.")
-                st.code(raw_text, language="markdown")
+                st.markdown(raw_text)
                 
-            # 2) 각 플랫폼별 탭
+            # 2) 각 플랫폼별 탭 (기존 복사 가능 코드 상자 유지)
             for i, platform in enumerate(platforms):
                 with result_tabs[i+1]:
                     st.caption(f"우측 상단의 복사 버튼(📋 아이콘)을 누르면 [{platform}] 원고가 복사됩니다.")
@@ -209,7 +207,7 @@ with main_tab2:
                         delete_indices.append(idx)
                 with c_exp:
                     with st.expander(f"[{idx+1}] {item['product_name']}"):
-                        st.code(item['content'], language="markdown")
+                        st.markdown(item['content'])
             
             if st.form_submit_button("🗑️ 선택 항목 삭제", use_container_width=True):
                 if not delete_indices:
