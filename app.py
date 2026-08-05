@@ -3,39 +3,53 @@ import google.generativeai as genai
 import re
 
 # ==========================================================
-# 1. 페이지 기본 설정 및 초창기 CSS 스타일 복원 (나눔고딕 15px & BOLD 소제목)
+# 1. 페이지 기본 설정 및 안정화된 CSS (제목 확대 & 겹침 버그 완벽 수정)
 # ==========================================================
 st.set_page_config(page_title="멀티 플랫폼 AI 원고 생성기", layout="wide")
 
-# 맨 처음 요청하셨던 스타일 그대로 재설정 (겹침 버그만 예외 처리)
+# CSS 수정: UI 버그 없이 폰트 적용 및 제목/본문 크기 구분
 st.markdown("""
     <style>
     @import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700;800&display=swap');
     
-    /* 나눔고딕 폰트 및 15px 기본 글씨 크기 설정 */
-    html, body, [class*="css"], div, p, span, input, textarea {
+    /* 1. 전체 폰트를 나눔고딕으로 설정 */
+    html, body, [class*="st-"] {
         font-family: 'Nanum Gothic', sans-serif !important;
-        font-size: 15px !important;
     }
     
-    /* 소제목 및 강조 텍스트 BOLD 스타일 */
-    .blog-subtitle {
+    /* 2. 제목 글씨 크기 시원하게 확대 */
+    h1 {
+        font-size: 2.2rem !important;
+        font-weight: 800 !important;
+        color: #111111 !important;
+    }
+    h2, h3 {
+        font-size: 1.4rem !important;
         font-weight: 700 !important;
-        font-size: 17px !important;
-        margin-top: 15px;
-        margin-bottom: 5px;
+        color: #222222 !important;
     }
-
-    /* 겹침 버그 방지 예외 처리 (파일 업로더 내부 텍스트) */
-    [data-testid="stFileUploader"] button p {
-        font-size: 13px !important;
+    
+    /* 3. 입력창 및 라벨 글자 크기 조정 */
+    .stTextInput label, .stTextArea label, .stFileUploader label {
+        font-size: 16px !important;
+        font-weight: 700 !important;
     }
-
-    /* 텍스트 복사 및 탭 창 내부 가독성 유지 */
-    .stCodeBlock code, .stCodeBlock div {
+    .stTextInput input, .stTextArea textarea {
         font-size: 15px !important;
-        line-height: 1.7 !important;
+        line-height: 1.6 !important;
+    }
+
+    /* 4. 원고 생성 결과물 텍스트 크기 확대 (16px) 및 줄간격 확보 */
+    .stCodeBlock code, .stCodeBlock div {
+        font-size: 16px !important;
+        line-height: 1.8 !important;
         font-family: 'Nanum Gothic', monospace !important;
+    }
+    
+    /* 5. 탭 메뉴 글씨 크기 확대 */
+    button[data-baseweb="tab"] div {
+        font-size: 16px !important;
+        font-weight: 700 !important;
     }
     </style>
 """, unsafe_allow_html=True)
@@ -70,7 +84,7 @@ def reset_all():
     st.session_state.generated_contents = None
 
 # ==========================================================
-# 2. 프롬프트 시스템 설정 (5개 플랫폼 세부 지침 준수)
+# 2. 프롬프트 시스템 설정
 # ==========================================================
 SYSTEM_PROMPT = """
 당신은 SNS 콘텐츠 전문 마케팅 카피라이터입니다. 
