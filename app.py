@@ -69,6 +69,9 @@ SYSTEM_PROMPT = """
 당신은 SNS 콘텐츠 전문 마케팅 카피라이터입니다. 
 제공된 정보를 바탕으로 아래 5가지 플랫폼에 최적화된 원고를 일괄 작성해주세요.
 
+[중요 금지사항]
+각 플랫폼 원고 내부에는 절대로 구분선(--- 또는 *** 등)을 사용하지 마세요.
+
 1. **네이버 블로그**:
    - 친근하고 정성스러운 실제 사용 후기 어조 ('~했어요', '~입니다', 이모지 적절히 활용)
    - 숫자 소제목(이모지 활용 및 BOLD **소제목**)으로 구조화
@@ -184,9 +187,8 @@ with main_tab1:
                     "content": st.session_state.generated_contents
                 }
                 st.session_state.saved_history.append(new_item)
-                # JSON 파일에도 영구 저장
                 save_history(st.session_state.saved_history)
-                st.success("히스토리에 영구 저장되었습니다! (코드 수정 후에도 유지됩니다)")
+                st.success("히스토리에 영구 저장되었습니다!")
 
             st.markdown("---")
             
@@ -204,17 +206,25 @@ with main_tab1:
                     pattern = rf"\[{re.escape(platform)}\]\s*(.*)"
                 
                 match = re.search(pattern, raw_text, re.DOTALL)
-                parsed_contents[platform] = match.group(1).strip() if match else "생성된 내용이 없습니다."
+                
+                if match:
+                    content = match.group(1).strip()
+                    # 본문 내부의 구분선(---, ***) 제거 처리
+                    content = re.sub(r'^[ \t]*[-*_]{3,}[ \t]*$', '', content, flags=re.MULTILINE)
+                    parsed_contents[platform] = content.strip()
+                else:
+                    parsed_contents[platform] = "생성된 내용이 없습니다."
 
             # 결과 탭 구성
             result_tabs = st.tabs(["📋 전체 원고"] + [f"📌 {p}" for p in platforms])
             
-            # 1) 전체 원고 탭
+            # 1) 전체 원고 탭 (각 플랫폼 영역 사이에만 구분선 배치)
             with result_tabs[0]:
-                for platform in platforms:
+                for idx, platform in enumerate(platforms):
                     st.markdown(f"## 📌 {platform}")
                     st.markdown(parsed_contents[platform])
-                    st.markdown("---")
+                    if idx < len(platforms) - 1:
+                        st.markdown("---")
                 
             # 2) 각 플랫폼별 탭
             for i, platform in enumerate(platforms):
@@ -251,7 +261,6 @@ with main_tab2:
                 else:
                     for i in sorted(delete_indices, reverse=True):
                         del st.session_state.saved_history[i]
-                    # JSON 파일 업데이트
                     save_history(st.session_state.saved_history)
                     st.success("선택한 원고가 삭제되었습니다.")
                     st.rerun()
