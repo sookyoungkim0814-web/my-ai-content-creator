@@ -1,6 +1,26 @@
 import streamlit as st
 import google.generativeai as genai
 import re
+import json
+import os
+
+# ==========================================================
+# 0. 로컬 파일(JSON) 저장/불러오기 함수
+# ==========================================================
+HISTORY_FILE = "saved_history.json"
+
+def load_history():
+    if os.path.exists(HISTORY_FILE):
+        try:
+            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return []
+    return []
+
+def save_history(history_list):
+    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
+        json.dump(history_list, f, ensure_ascii=False, indent=4)
 
 # ==========================================================
 # 1. 페이지 기본 설정
@@ -24,12 +44,12 @@ else:
     st.sidebar.warning("⚠️ API Key를 확인해주세요.")
 
 # ----------------------------------------------------------
-# 세션 상태 초기화 (saved_history 보호)
+# 세션 상태 초기화 (JSON 파일 기반 영구 저장)
 # ----------------------------------------------------------
 if "generated_contents" not in st.session_state:
     st.session_state.generated_contents = None
 if "saved_history" not in st.session_state:
-    st.session_state.saved_history = []
+    st.session_state.saved_history = load_history()
 if "file_uploader_key" not in st.session_state:
     st.session_state.file_uploader_key = 0
 
@@ -40,7 +60,6 @@ def reset_inputs_only():
     st.session_state["extra_info"] = ""
     st.session_state["feedback_text"] = ""
     st.session_state.generated_contents = None
-    # 파일 업로더 초기화를 위해 키 변경 (콜백 내부이므로 st.rerun() 없이도 스크립트가 자동으로 재실행됨)
     st.session_state.file_uploader_key += 1
 
 # ==========================================================
@@ -160,11 +179,14 @@ with main_tab1:
         
         if st.session_state.generated_contents:
             if st.button("💾 원고 저장하기", use_container_width=True):
-                st.session_state.saved_history.append({
+                new_item = {
                     "product_name": product_name if product_name else "무제",
                     "content": st.session_state.generated_contents
-                })
-                st.success("히스토리에 저장되었습니다! '저장된 원고 관리' 탭에서 확인하세요.")
+                }
+                st.session_state.saved_history.append(new_item)
+                # JSON 파일에도 영구 저장
+                save_history(st.session_state.saved_history)
+                st.success("히스토리에 영구 저장되었습니다! (코드 수정 후에도 유지됩니다)")
 
             st.markdown("---")
             
@@ -229,5 +251,7 @@ with main_tab2:
                 else:
                     for i in sorted(delete_indices, reverse=True):
                         del st.session_state.saved_history[i]
+                    # JSON 파일 업데이트
+                    save_history(st.session_state.saved_history)
                     st.success("선택한 원고가 삭제되었습니다.")
                     st.rerun()
