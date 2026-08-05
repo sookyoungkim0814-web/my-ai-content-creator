@@ -33,16 +33,15 @@ if "saved_history" not in st.session_state:
 if "file_uploader_key" not in st.session_state:
     st.session_state.file_uploader_key = 0
 
-# 입력창, 업로드 파일, 현재 결과를 안전하게 초기화하는 함수
+# 입력창, 업로드 파일, 현재 결과를 안전하게 초기화하는 콜백 함수
 def reset_inputs_only():
     st.session_state["product_name"] = ""
     st.session_state["main_features"] = ""
     st.session_state["extra_info"] = ""
     st.session_state["feedback_text"] = ""
     st.session_state.generated_contents = None
-    # 파일 업로더 초기화를 위해 키 변경
+    # 파일 업로더 초기화를 위해 키 변경 (콜백 내부이므로 st.rerun() 없이도 스크립트가 자동으로 재실행됨)
     st.session_state.file_uploader_key += 1
-    st.rerun()
 
 # ==========================================================
 # 2. 프롬프트 시스템 설정
