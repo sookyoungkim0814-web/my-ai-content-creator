@@ -3,53 +3,53 @@ import google.generativeai as genai
 import re
 
 # ==========================================================
-# 1. 페이지 기본 설정 및 안정화된 CSS (제목 확대 & 겹침 버그 완벽 수정)
+# 1. 페이지 기본 설정 및 CSS (맑은 고딕 적용 + 아이콘 깨짐 완전 방지)
 # ==========================================================
 st.set_page_config(page_title="멀티 플랫폼 AI 원고 생성기", layout="wide")
 
-# CSS 수정: UI 버그 없이 폰트 적용 및 제목/본문 크기 구분
 st.markdown("""
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Nanum+Gothic:wght@400;700;800&display=swap');
-    
-    /* 1. 전체 폰트를 나눔고딕으로 설정 */
-    html, body, [class*="st-"] {
-        font-family: 'Nanum Gothic', sans-serif !important;
+    /* 맑은 고딕 폰트 적용 (아이콘 요소를 건드리지 않도록 명확한 태그 지정) */
+    p, span, label, input, textarea, button, h1, h2, h3, h4, .stMarkdown {
+        font-family: 'Malgun Gothic', '맑은 고딕', sans-serif !important;
     }
     
-    /* 2. 제목 글씨 크기 시원하게 확대 */
+    /* 제목(Title / Subheader) 크기 대폭 확대 및 강조 */
     h1 {
-        font-size: 2.2rem !important;
-        font-weight: 800 !important;
+        font-size: 2.3rem !important;
+        font-weight: bold !important;
         color: #111111 !important;
+        padding-bottom: 10px;
     }
-    h2, h3 {
-        font-size: 1.4rem !important;
-        font-weight: 700 !important;
+    
+    h2, h3, [data-testid="stSubheader"] {
+        font-size: 1.5rem !important;
+        font-weight: bold !important;
         color: #222222 !important;
     }
     
-    /* 3. 입력창 및 라벨 글자 크기 조정 */
+    /* 입력창 라벨 및 본문 글자 크기 조정 */
     .stTextInput label, .stTextArea label, .stFileUploader label {
         font-size: 16px !important;
-        font-weight: 700 !important;
+        font-weight: bold !important;
     }
+    
     .stTextInput input, .stTextArea textarea {
         font-size: 15px !important;
         line-height: 1.6 !important;
     }
 
-    /* 4. 원고 생성 결과물 텍스트 크기 확대 (16px) 및 줄간격 확보 */
+    /* 원고 결과창 글씨 크기 확대 및 맑은 고딕 적용 */
     .stCodeBlock code, .stCodeBlock div {
         font-size: 16px !important;
         line-height: 1.8 !important;
-        font-family: 'Nanum Gothic', monospace !important;
+        font-family: 'Malgun Gothic', '맑은 고딕', sans-serif !important;
     }
     
-    /* 5. 탭 메뉴 글씨 크기 확대 */
-    button[data-baseweb="tab"] div {
+    /* 탭 메뉴 글씨 크기 강조 */
+    button[data-baseweb="tab"] div p {
         font-size: 16px !important;
-        font-weight: 700 !important;
+        font-weight: bold !important;
     }
     </style>
 """, unsafe_allow_html=True)
