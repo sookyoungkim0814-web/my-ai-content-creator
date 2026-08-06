@@ -24,7 +24,7 @@ def get_db_engine():
             }
         )
         with engine.connect() as conn:
-            # 1. history 기본 테이블 생성 (없는 경우)
+            # 1. history 기본 테이블 생성
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS history (
                     id SERIAL PRIMARY KEY,
@@ -32,7 +32,7 @@ def get_db_engine():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """))
-            # 2. 기존 테이블에 product_name 컬럼이 없는 경우 자동 추가
+            # 2. product_name 컬럼 자동 추가
             conn.execute(text("""
                 ALTER TABLE history 
                 ADD COLUMN IF NOT EXISTS product_name TEXT;
@@ -108,7 +108,7 @@ else:
     st.sidebar.warning("⚠️ API Key를 확인해주세요.")
 
 # ----------------------------------------------------------
-# 세션 상태 초기화 (Supabase DB 조회)
+# 세션 상태 초기화
 # ----------------------------------------------------------
 if "generated_contents" not in st.session_state:
     st.session_state.generated_contents = None
@@ -126,14 +126,15 @@ def reset_inputs_only():
     st.session_state.file_uploader_key += 1
 
 # ==========================================================
-# 2. 프롬프트 시스템 설정
+# 2. 프롬프트 시스템 설정 (한 플랫폼 내 구분선 강력 금지)
 # ==========================================================
 SYSTEM_PROMPT = """
 당신은 SNS 콘텐츠 전문 마케팅 카피라이터입니다. 
 제공된 정보를 바탕으로 아래 5가지 플랫폼에 최적화된 원고를 일괄 작성해주세요.
 
-[중요 금지사항]
-각 플랫폼 원고 내부에는 절대로 구분선(--- 또는 *** 등)을 사용하지 마세요.
+[💥 최우선 절대 지침]
+각 플랫폼 원고 "내부"에는 어떠한 형태의 구분선(---, ***, ===, ___ 등)도 절대 사용하지 마세요. 
+단락과 단락 사이는 줄바꿈(Enter)이나 이모지/소제목으로만 구분해야 합니다.
 
 1. **네이버 블로그**:
    - 친근하고 정성스러운 실제 사용 후기 어조 ('~했어요', '~입니다', 이모지 적절히 활용)
@@ -246,15 +247,7 @@ with main_tab1:
         st.subheader("📄 생성된 원고 결과")
         
         if st.session_state.generated_contents:
-            if st.button("💾 원고 저장하기", use_container_width=True):
-                p_name = product_name if product_name else "무제"
-                if save_history_to_db(p_name, st.session_state.generated_contents):
-                    st.session_state.saved_history = load_history_from_db()
-                    st.success("Supabase PostgreSQL DB에 안전하게 저장되었습니다!")
-
-            st.markdown("---")
-            
-            # 플랫폼별 텍스트 파싱
+            # 플랫폼별 텍스트 파싱 및 내부분선 정제
             raw_text = st.session_state.generated_contents
             platforms = ["네이버 블로그", "인스타그램 피드", "인스타그램 캐러셀", "인스타그램 릴스/숏츠", "오늘의집 피드"]
             parsed_contents = {}
@@ -271,27 +264,42 @@ with main_tab1:
                 
                 if match:
                     content = match.group(1).strip()
-                    # 각 글 내부의 구분선(---, ***) 자동 제거
+                    # 플랫폼 내부의 모든 구분선(---, ***, ===, ___ 등) 자동 제거
                     content = re.sub(r'^[ \t]*[-*_]{3,}[ \t]*$', '', content, flags=re.MULTILINE)
                     parsed_contents[platform] = content.strip()
                 else:
                     parsed_contents[platform] = "생성된 내용이 없습니다."
 
+            # DB 저장 시: 플랫폼 사이에는 구분선을 넣어 통합 저장
+            clean_full_content = ""
+            for idx, platform in enumerate(platforms):
+                clean_full_content += f"[{platform}]\n{parsed_contents[platform]}\n"
+                if idx < len(platforms) - 1:
+                    clean_full_content += "\n----------------------------------------\n\n"
+
+            if st.button("💾 원고 저장하기", use_container_width=True):
+                p_name = product_name if product_name else "무제"
+                if save_history_to_db(p_name, clean_full_content):
+                    st.session_state.saved_history = load_history_from_db()
+                    st.success("Supabase PostgreSQL DB에 안전하게 저장되었습니다!")
+
+            st.markdown("---")
+
             # 결과 탭 구성
             result_tabs = st.tabs(["📋 전체 원고"] + [f"📌 {p}" for p in platforms])
             
-            # 1) 전체 원고 탭
+            # 1) 전체 원고 탭 (각 플랫폼 사이에만 구분선 표시)
             with result_tabs[0]:
                 for idx, platform in enumerate(platforms):
                     st.markdown(f"## 📌 {platform}")
-                    st.markdown(parsed_contents[platform])
+                    st.code(parsed_contents[platform], language="markdown")
                     if idx < len(platforms) - 1:
-                        st.markdown("---")
+                        st.markdown("---") # 플랫폼과 플랫폼 사이의 구분선
                 
-            # 2) 각 플랫폼별 탭
+            # 2) 각 플랫폼별 탭 (내부 구분선 없이 깔끔한 복사용 코드블럭)
             for i, platform in enumerate(platforms):
                 with result_tabs[i+1]:
-                    st.caption(f"우측 상단의 복사 버튼(📋 아이콘)을 누르면 [{platform}] 원고가 복사됩니다.")
+                    st.caption(f"우측 상단의 복사 버튼(📋 아이콘)을 누르면 [{platform}] 원고가 변형 없이 복사됩니다.")
                     st.code(parsed_contents[platform], language="markdown")
 
         else:
@@ -320,7 +328,8 @@ with main_tab2:
                         delete_ids.append(item_id)
                 with c_exp:
                     with st.expander(f"[{item_id}] {item.get('product_name', '무제')}"):
-                        st.markdown(item.get("content", ""))
+                        st.caption("우측 상단 복사 아이콘을 클릭하여 원문 그대로 복사할 수 있습니다.")
+                        st.code(item.get("content", ""), language="markdown")
             
             if st.form_submit_button("🗑️ 선택 항목 삭제", use_container_width=True):
                 if not delete_ids:
