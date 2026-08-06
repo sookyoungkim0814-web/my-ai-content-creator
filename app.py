@@ -83,6 +83,14 @@ def delete_history_from_db(item_ids):
         st.error(f"DB 삭제 오류: {e}")
         return False
 
+# 텍스트 내 들여쓰기 공백 제거 함수 (코드 블록 방지용)
+def clean_markdown_indent(text_data):
+    if not text_data:
+        return ""
+    lines = text_data.split("\n")
+    cleaned = [line.lstrip() for line in lines]
+    return "\n".join(cleaned)
+
 # ==========================================================
 # 1. 페이지 기본 설정
 # ==========================================================
@@ -123,7 +131,7 @@ def reset_inputs_only():
     st.session_state.file_uploader_key += 1
 
 # ==========================================================
-# 2. 프롬프트 시스템 설정 (한 플랫폼 내 구분선 강력 금지)
+# 2. 프롬프트 시스템 설정
 # ==========================================================
 SYSTEM_PROMPT = """
 당신은 SNS 콘텐츠 전문 마케팅 카피라이터입니다. 
@@ -263,8 +271,8 @@ with main_tab1:
                     content = match.group(1).strip()
                     # 1. 내부 구분선(--- 등) 제거
                     content = re.sub(r'^[ \t]*[-*_]{3,}[ \t]*$', '', content, flags=re.MULTILINE)
-                    # 2. 코드 블록 감지를 방지하기 위해 각 줄 맨 앞의 불필요한 공백/탭 제거
-                    content = "\n".join([line.lstrip() for line in content.split("\n")])
+                    # 2. 코드 블록 생성 방지를 위해 각 줄 맨 앞 공백 제거
+                    content = clean_markdown_indent(content)
                     parsed_contents[platform] = content.strip()
                 else:
                     parsed_contents[platform] = "생성된 내용이 없습니다."
@@ -287,13 +295,13 @@ with main_tab1:
             # 결과 탭 구성
             result_tabs = st.tabs(["📋 전체 원고"] + [f"📌 {p}" for p in platforms])
             
-            # 1) 전체 원고 탭 (코드 블록/클립보드 박스 없이 순수 일반 텍스트로만 표시)
+            # 1) 전체 원고 탭 (복사 상자 없이 순수 일반 텍스트 출력)
             with result_tabs[0]:
                 for idx, platform in enumerate(platforms):
                     st.markdown(f"## 📌 {platform}")
                     st.markdown(parsed_contents[platform])
                     if idx < len(platforms) - 1:
-                        st.markdown("---") # 플랫폼 간 구분선
+                        st.markdown("---")
                 
             # 2) 각 플랫폼별 탭 (개별 복사용 코드블록)
             for i, platform in enumerate(platforms):
@@ -327,8 +335,10 @@ with main_tab2:
                         delete_ids.append(item_id)
                 with c_exp:
                     with st.expander(f"[{item_id}] {item.get('product_name', '무제')}"):
-                        st.caption("우측 상단 복사 아이콘을 클릭하여 원문 그대로 복사할 수 있습니다.")
-                        st.code(item.get("content", ""), language="markdown")
+                        # 저장된 원고 읽어올 때 들여쓰기 공백 제거 후 일반 마크다운(st.markdown)으로 표시
+                        raw_history_content = item.get("content", "")
+                        cleaned_history_content = clean_markdown_indent(raw_history_content)
+                        st.markdown(cleaned_history_content)
             
             if st.form_submit_button("🗑️ 선택 항목 삭제", use_container_width=True):
                 if not delete_ids:
