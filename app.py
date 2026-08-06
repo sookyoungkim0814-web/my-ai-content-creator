@@ -1,26 +1,86 @@
 import streamlit as st
 import google.generativeai as genai
 import re
-import json
-import os
+from sqlalchemy import create_engine, text
 
 # ==========================================================
-# 0. 로컬 파일(JSON) 저장/불러오기 함수
+# 0. DATABASE_URL 기반 Supabase PostgreSQL 연동 (방법 2 적용)
 # ==========================================================
-HISTORY_FILE = "saved_history.json"
+DATABASE_URL = st.secrets.get("DATABASE_URL", "")
 
-def load_history():
-    if os.path.exists(HISTORY_FILE):
-        try:
-            with open(HISTORY_FILE, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return []
-    return []
+@st.cache_resource
+def get_db_engine():
+    if not DATABASE_URL:
+        st.error("⚠️ Secrets에 DATABASE_URL이 설정되어 있지 않습니다.")
+        return None
+    try:
+        # SSL 모드 및 커넥션 타임아웃 옵션 추가 (방법 2)
+        engine = create_engine(
+            DATABASE_URL, 
+            pool_pre_ping=True,
+            connect_args={
+                "sslmode": "require", 
+                "connect_timeout": 10
+            }
+        )
+        # history 테이블 자동 생성 (없는 경우)
+        with engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS history (
+                    id SERIAL PRIMARY KEY,
+                    product_name TEXT,
+                    content TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """))
+            conn.commit()
+        return engine
+    except Exception as e:
+        st.error(f"❌ DB 연결 실패: {e}")
+        return None
 
-def save_history(history_list):
-    with open(HISTORY_FILE, "w", encoding="utf-8") as f:
-        json.dump(history_list, f, ensure_ascii=False, indent=4)
+engine = get_db_engine()
+
+def load_history_from_db():
+    if not engine:
+        return []
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT id, product_name, content FROM history ORDER BY id DESC;"))
+            return [{"id": row[0], "product_name": row[1], "content": row[2]} for row in result.fetchall()]
+    except Exception as e:
+        st.error(f"DB 데이터 불러오기 오류: {e}")
+        return []
+
+def save_history_to_db(product_name, content):
+    if not engine:
+        return False
+    try:
+        with engine.connect() as conn:
+            conn.execute(
+                text("INSERT INTO history (product_name, content) VALUES (:p_name, :cnt);"),
+                {"p_name": product_name, "cnt": content}
+            )
+            conn.commit()
+        return True
+    except Exception as e:
+        st.error(f"DB 저장 오류: {e}")
+        return False
+
+def delete_history_from_db(item_ids):
+    if not engine or not item_ids:
+        return False
+    try:
+        with engine.connect() as conn:
+            conn.execute(
+                text("DELETE FROM history WHERE id = ANY(:ids);"),
+                {"ids": item_ids}
+            )
+            conn.commit()
+        return True
+    except Exception as e:
+        st.error(f"DB 삭제 오류: {e}")
+        return False
 
 # ==========================================================
 # 1. 페이지 기본 설정
@@ -44,16 +104,15 @@ else:
     st.sidebar.warning("⚠️ API Key를 확인해주세요.")
 
 # ----------------------------------------------------------
-# 세션 상태 초기화 (JSON 파일 기반 영구 저장)
+# 세션 상태 초기화 (Supabase DB 조회)
 # ----------------------------------------------------------
 if "generated_contents" not in st.session_state:
     st.session_state.generated_contents = None
 if "saved_history" not in st.session_state:
-    st.session_state.saved_history = load_history()
+    st.session_state.saved_history = load_history_from_db()
 if "file_uploader_key" not in st.session_state:
     st.session_state.file_uploader_key = 0
 
-# 입력창, 업로드 파일, 현재 결과를 안전하게 초기화하는 콜백 함수
 def reset_inputs_only():
     st.session_state["product_name"] = ""
     st.session_state["main_features"] = ""
@@ -184,13 +243,10 @@ with main_tab1:
         
         if st.session_state.generated_contents:
             if st.button("💾 원고 저장하기", use_container_width=True):
-                new_item = {
-                    "product_name": product_name if product_name else "무제",
-                    "content": st.session_state.generated_contents
-                }
-                st.session_state.saved_history.append(new_item)
-                save_history(st.session_state.saved_history)
-                st.success("히스토리에 영구 저장되었습니다!")
+                p_name = product_name if product_name else "무제"
+                if save_history_to_db(p_name, st.session_state.generated_contents):
+                    st.session_state.saved_history = load_history_from_db()
+                    st.success("Supabase PostgreSQL DB에 안전하게 저장되었습니다!")
 
             st.markdown("---")
             
@@ -211,7 +267,7 @@ with main_tab1:
                 
                 if match:
                     content = match.group(1).strip()
-                    # 본문 내부의 구분선(---, ***) 제거 처리
+                    # 각 글 내부의 구분선(---, ***) 자동 제거
                     content = re.sub(r'^[ \t]*[-*_]{3,}[ \t]*$', '', content, flags=re.MULTILINE)
                     parsed_contents[platform] = content.strip()
                 else:
@@ -220,7 +276,7 @@ with main_tab1:
             # 결과 탭 구성
             result_tabs = st.tabs(["📋 전체 원고"] + [f"📌 {p}" for p in platforms])
             
-            # 1) 전체 원고 탭 (각 플랫폼 영역 사이에만 구분선 배치)
+            # 1) 전체 원고 탭
             with result_tabs[0]:
                 for idx, platform in enumerate(platforms):
                     st.markdown(f"## 📌 {platform}")
@@ -238,31 +294,35 @@ with main_tab1:
             st.info("👈 왼쪽 입력창에 정보를 입력하고 원고 생성 버튼을 누르면 이 영역에 결과가 나타납니다.")
 
 # ----------------------------------------------------------
-# [MAIN TAB 2] 저장된 원고 관리
+# [MAIN TAB 2] 저장된 원고 관리 (Supabase 기반)
 # ----------------------------------------------------------
 with main_tab2:
     st.subheader("📚 저장된 히스토리 관리")
     
+    if st.button("🔄 DB 목록 새로고침"):
+        st.session_state.saved_history = load_history_from_db()
+        st.rerun()
+
     if not st.session_state.saved_history:
         st.info("저장된 원고가 없습니다. '원고 생성 및 결과' 탭에서 원고를 만든 뒤 [💾 원고 저장하기] 버튼을 눌러보세요.")
     else:
         with st.form("history_delete_form"):
-            delete_indices = []
-            for idx, item in enumerate(st.session_state.saved_history):
+            delete_ids = []
+            for item in st.session_state.saved_history:
+                item_id = item.get("id")
                 c_chk, c_exp = st.columns([1, 15])
                 with c_chk:
-                    if st.checkbox("", key=f"history_chk_{idx}"):
-                        delete_indices.append(idx)
+                    if st.checkbox("", key=f"history_chk_{item_id}"):
+                        delete_ids.append(item_id)
                 with c_exp:
-                    with st.expander(f"[{idx+1}] {item['product_name']}"):
-                        st.markdown(item['content'])
+                    with st.expander(f"[{item_id}] {item.get('product_name', '무제')}"):
+                        st.markdown(item.get("content", ""))
             
             if st.form_submit_button("🗑️ 선택 항목 삭제", use_container_width=True):
-                if not delete_indices:
+                if not delete_ids:
                     st.warning("삭제할 항목을 선택해주세요.")
                 else:
-                    for i in sorted(delete_indices, reverse=True):
-                        del st.session_state.saved_history[i]
-                    save_history(st.session_state.saved_history)
-                    st.success("선택한 원고가 삭제되었습니다.")
-                    st.rerun()
+                    if delete_history_from_db(delete_ids):
+                        st.session_state.saved_history = load_history_from_db()
+                        st.success("선택한 원고가 DB에서 삭제되었습니다.")
+                        st.rerun()
