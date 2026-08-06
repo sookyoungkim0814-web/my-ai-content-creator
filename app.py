@@ -14,7 +14,6 @@ def get_db_engine():
         st.error("⚠️ Secrets에 DATABASE_URL이 설정되어 있지 않습니다.")
         return None
     try:
-        # 방법 2: SSL 모드 및 커넥션 타임아웃 옵션 추가
         engine = create_engine(
             DATABASE_URL, 
             pool_pre_ping=True,
@@ -24,7 +23,6 @@ def get_db_engine():
             }
         )
         with engine.connect() as conn:
-            # 1. history 기본 테이블 생성
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS history (
                     id SERIAL PRIMARY KEY,
@@ -32,7 +30,6 @@ def get_db_engine():
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
             """))
-            # 2. product_name 컬럼 자동 추가
             conn.execute(text("""
                 ALTER TABLE history 
                 ADD COLUMN IF NOT EXISTS product_name TEXT;
@@ -133,8 +130,8 @@ SYSTEM_PROMPT = """
 제공된 정보를 바탕으로 아래 5가지 플랫폼에 최적화된 원고를 일괄 작성해주세요.
 
 [💥 최우선 절대 지침]
-각 플랫폼 원고 "내부"에는 어떠한 형태의 구분선(---, ***, ===, ___ 등)도 절대 사용하지 마세요. 
-단락과 단락 사이는 줄바꿈(Enter)이나 이모지/소제목으로만 구분해야 합니다.
+1. 각 플랫폼 원고 "내부"에는 어떠한 형태의 구분선(---, ***, ===, ___ 등)도 절대 사용하지 마세요. 
+2. 문단 맨 앞에 들여쓰기(공백/탭)를 넣지 마세요. 바로 글자를 시작해 주세요.
 
 1. **네이버 블로그**:
    - 친근하고 정성스러운 실제 사용 후기 어조 ('~했어요', '~입니다', 이모지 적절히 활용)
@@ -247,7 +244,7 @@ with main_tab1:
         st.subheader("📄 생성된 원고 결과")
         
         if st.session_state.generated_contents:
-            # 플랫폼별 텍스트 파싱 및 내부분선 정제
+            # 플랫폼별 텍스트 파싱 및 내부분선/들여쓰기 정제
             raw_text = st.session_state.generated_contents
             platforms = ["네이버 블로그", "인스타그램 피드", "인스타그램 캐러셀", "인스타그램 릴스/숏츠", "오늘의집 피드"]
             parsed_contents = {}
@@ -264,13 +261,15 @@ with main_tab1:
                 
                 if match:
                     content = match.group(1).strip()
-                    # 플랫폼 내부의 모든 구분선(---, ***, ===, ___ 등) 자동 제거
+                    # 1. 내부 구분선(--- 등) 제거
                     content = re.sub(r'^[ \t]*[-*_]{3,}[ \t]*$', '', content, flags=re.MULTILINE)
+                    # 2. 코드 블록 감지를 방지하기 위해 각 줄 맨 앞의 불필요한 공백/탭 제거
+                    content = "\n".join([line.lstrip() for line in content.split("\n")])
                     parsed_contents[platform] = content.strip()
                 else:
                     parsed_contents[platform] = "생성된 내용이 없습니다."
 
-            # DB 저장 시: 플랫폼 사이에는 구분선을 넣어 통합 저장
+            # DB 저장용 데이터 구성
             clean_full_content = ""
             for idx, platform in enumerate(platforms):
                 clean_full_content += f"[{platform}]\n{parsed_contents[platform]}\n"
@@ -288,15 +287,15 @@ with main_tab1:
             # 결과 탭 구성
             result_tabs = st.tabs(["📋 전체 원고"] + [f"📌 {p}" for p in platforms])
             
-            # 1) 전체 원고 탭 (각 플랫폼 사이에만 구분선 표시)
+            # 1) 전체 원고 탭 (코드 블록/클립보드 박스 없이 순수 일반 텍스트로만 표시)
             with result_tabs[0]:
                 for idx, platform in enumerate(platforms):
                     st.markdown(f"## 📌 {platform}")
-                    st.code(parsed_contents[platform], language="markdown")
+                    st.markdown(parsed_contents[platform])
                     if idx < len(platforms) - 1:
-                        st.markdown("---") # 플랫폼과 플랫폼 사이의 구분선
+                        st.markdown("---") # 플랫폼 간 구분선
                 
-            # 2) 각 플랫폼별 탭 (내부 구분선 없이 깔끔한 복사용 코드블럭)
+            # 2) 각 플랫폼별 탭 (개별 복사용 코드블록)
             for i, platform in enumerate(platforms):
                 with result_tabs[i+1]:
                     st.caption(f"우측 상단의 복사 버튼(📋 아이콘)을 누르면 [{platform}] 원고가 변형 없이 복사됩니다.")
