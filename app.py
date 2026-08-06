@@ -4,7 +4,7 @@ import re
 from sqlalchemy import create_engine, text
 
 # ==========================================================
-# 0. DATABASE_URL 기반 Supabase PostgreSQL 연동 (방법 2 적용)
+# 0. DATABASE_URL 기반 Supabase PostgreSQL 연동
 # ==========================================================
 DATABASE_URL = st.secrets.get("DATABASE_URL", "")
 
@@ -14,7 +14,7 @@ def get_db_engine():
         st.error("⚠️ Secrets에 DATABASE_URL이 설정되어 있지 않습니다.")
         return None
     try:
-        # SSL 모드 및 커넥션 타임아웃 옵션 추가 (방법 2)
+        # 방법 2: SSL 모드 및 커넥션 타임아웃 옵션 추가
         engine = create_engine(
             DATABASE_URL, 
             pool_pre_ping=True,
@@ -23,15 +23,19 @@ def get_db_engine():
                 "connect_timeout": 10
             }
         )
-        # history 테이블 자동 생성 (없는 경우)
         with engine.connect() as conn:
+            # 1. history 기본 테이블 생성 (없는 경우)
             conn.execute(text("""
                 CREATE TABLE IF NOT EXISTS history (
                     id SERIAL PRIMARY KEY,
-                    product_name TEXT,
                     content TEXT,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
                 );
+            """))
+            # 2. 기존 테이블에 product_name 컬럼이 없는 경우 자동 추가
+            conn.execute(text("""
+                ALTER TABLE history 
+                ADD COLUMN IF NOT EXISTS product_name TEXT;
             """))
             conn.commit()
         return engine
