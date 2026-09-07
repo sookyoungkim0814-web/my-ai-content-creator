@@ -2,6 +2,7 @@ import streamlit as st
 import google.generativeai as genai
 import re
 from sqlalchemy import create_engine, text
+from pypdf import PdfReader  # PDF 파일 읽기용 라이브러리 추가
 
 # ==========================================================
 # 0. DATABASE_URL 기반 Supabase PostgreSQL 연동
@@ -202,9 +203,10 @@ with main_tab1:
         with col_reset:
             st.button("🔄 전체 초기화", on_click=reset_inputs_only, use_container_width=True)
 
+        # PDF 형식(pdf) 추가
         uploaded_files = st.file_uploader(
-            "📷 참고 이미지 / 동영상 업로드 (선택)", 
-            type=["jpg", "jpeg", "png", "mp4", "mov"], 
+            "📷 참고 이미지 / 동영상 / PDF 문서 업로드 (선택)", 
+            type=["jpg", "jpeg", "png", "mp4", "mov", "pdf"], 
             accept_multiple_files=True,
             key=f"file_uploader_{st.session_state.file_uploader_key}"
         )
@@ -224,9 +226,22 @@ with main_tab1:
                     user_prompt = f"- 제품/주제: {product_name}\n- 주요 특징: {main_features}\n- 추가 정보: {extra_info}"
                     
                     contents = [SYSTEM_PROMPT, user_prompt]
+                    
                     if uploaded_files:
                         for file in uploaded_files:
-                            contents.append({"mime_type": file.type, "data": file.read()})
+                            # PDF 파일인 경우 텍스트 추출 후 프롬프트에 병합
+                            if file.type == "application/pdf":
+                                try:
+                                    pdf_reader = PdfReader(file)
+                                    extracted_text = ""
+                                    for page in pdf_reader.pages:
+                                        extracted_text += page.extract_text() or ""
+                                    contents.append(f"\n[첨부 PDF 문서 내용 ({file.name})]:\n{extracted_text}")
+                                except Exception as e:
+                                    st.warning(f"⚠️ {file.name} PDF 읽기 실패: {e}")
+                            else:
+                                # 이미지/동영상 바이너리 전달
+                                contents.append({"mime_type": file.type, "data": file.read()})
                     
                     response = model.generate_content(contents)
                     st.session_state.generated_contents = response.text
