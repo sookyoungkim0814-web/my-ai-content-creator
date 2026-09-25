@@ -9,6 +9,10 @@ from pypdf import PdfReader  # PDF 파일 읽기용 라이브러리 추가
 # ==========================================================
 DATABASE_URL = st.secrets.get("DATABASE_URL", "")
 
+# postgresql:// 주소를 psycopg2 드라이버 명시 형태로 자동 변환 (DB 연결 오류 해결)
+if DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+
 @st.cache_resource
 def get_db_engine():
     if not DATABASE_URL:
