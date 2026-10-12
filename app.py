@@ -100,7 +100,7 @@ def clean_markdown_indent(text_data):
 st.set_page_config(page_title="멀티 플랫폼 AI 원고 생성기", layout="wide")
 
 st.title("📱 멀티 플랫폼 AI 원고 생성기")
-st.caption("하나의 정보로 네이버 블로그, 인스타 피드/캐러셀/릴ส·숏츠, 오늘의집 피드 원고를 동시에 생성합니다.")
+st.caption("하나의 정보로 네이버 블로그, 인스타 피드/캐러셀/릴스·숏츠, 오늘의집 피드 원고를 동시에 생성합니다.")
 
 # ----------------------------------------------------------
 # 🔑 API Key 불러오기
@@ -134,7 +134,7 @@ def reset_inputs_only():
     st.session_state.file_uploader_key += 1
 
 # ==========================================================
-# 2. 프롬프트 시스템 설정 (구문 오류 방지용 단일 문자열 조합)
+# 2. 프롬프트 시스템 설정
 # ==========================================================
 SYSTEM_PROMPT = (
     "당신은 SNS 콘텐츠 전문 마케팅 카피라이터입니다.\n"
@@ -237,10 +237,3 @@ with main_tab1:
                 else:
                     with st.spinner("피드백을 반영하여 다시 작성 중입니다..."):
                         model = genai.GenerativeModel("gemini-3.6-flash")
-                        refine_prompt = f"이전 원고:\n{st.session_state.generated_contents}\n\n피드백:\n{feedback}\n\n위 피드백 5개 플랫폼 모두에 반영해서 다시 작성해주세요."
-                        response = model.generate_content([SYSTEM_PROMPT, refine_prompt])
-                        st.session_state.generated_contents = response.text
-                        st.rerun()
-
-    with right_col:
-        st.subheader("📄 생성된 원고 결과")
