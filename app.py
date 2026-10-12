@@ -27,16 +27,8 @@ def get_db_engine():
             }
         )
         with engine.connect() as conn:
-            conn.execute(text(
-                "CREATE TABLE IF NOT EXISTS history ("
-                "id SERIAL PRIMARY KEY, "
-                "content TEXT, "
-                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"
-            ))
-            conn.execute(text(
-                "ALTER TABLE history "
-                "ADD COLUMN IF NOT EXISTS product_name TEXT;"
-            ))
+            conn.execute(text("CREATE TABLE IF NOT EXISTS history (id SERIAL PRIMARY KEY, content TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
+            conn.execute(text("ALTER TABLE history ADD COLUMN IF NOT EXISTS product_name TEXT;"))
             conn.commit()
         return engine
     except Exception as e:
@@ -61,10 +53,7 @@ def save_history_to_db(product_name, content):
         return False
     try:
         with engine.connect() as conn:
-            conn.execute(
-                text("INSERT INTO history (product_name, content) VALUES (:p_name, :cnt);"),
-                {"p_name": product_name, "cnt": content}
-            )
+            conn.execute(text("INSERT INTO history (product_name, content) VALUES (:p_name, :cnt);"), {"p_name": product_name, "cnt": content})
             conn.commit()
         return True
     except Exception as e:
@@ -76,10 +65,7 @@ def delete_history_from_db(item_ids):
         return False
     try:
         with engine.connect() as conn:
-            conn.execute(
-                text("DELETE FROM history WHERE id = ANY(:ids);"),
-                {"ids": item_ids}
-            )
+            conn.execute(text("DELETE FROM history WHERE id = ANY(:ids);"), {"ids": item_ids})
             conn.commit()
         return True
     except Exception as e:
@@ -134,7 +120,7 @@ def reset_inputs_only():
     st.session_state.file_uploader_key += 1
 
 # ==========================================================
-# 2. 프롬프트 시스템 설정 (구문 오류 원천 차단형 단일 문자열 조합)
+# 2. 프롬프트 시스템 설정 (구문 오류 완전 차단형)
 # ==========================================================
 SYSTEM_PROMPT = (
     "당신은 SNS 콘텐츠 전문 마케팅 카피라이터입니다.\n"
@@ -185,4 +171,34 @@ with main_tab1:
         
         col_reset, _ = st.columns([4, 6])
         with col_reset:
-            st.button("🔄 전체 초기화", on_click=reset_inputs_only, use_container_width
+            st.button("🔄 전체 초기화", on_click=reset_inputs_only, use_container_width=True)
+
+        uploaded_files = st.file_uploader("📷 참고 이미지 / 동영상 / PDF 문서 업로드 (선택)", type=["jpg", "jpeg", "png", "mp4", "mov", "pdf"], accept_multiple_files=True, key=f"file_uploader_{st.session_state.file_uploader_key}")
+
+        product_name = st.text_input("제품/장소/주제 이름", key="product_name", placeholder="예: 줄즈 에어2 휴대용 유모차")
+        main_features = st.text_area("주요 특징 및 장점 (줄바꿈 구분)", key="main_features", height=150, placeholder="예:\n- 한 손 한방 폴딩 및 기내 반입 가능\n- 매끄러운 핸들링과 서스펜션")
+        extra_info = st.text_area("추가 정보 (가격, 구매처 등)", key="extra_info", height=100, placeholder="예: 베이비하우스 내돈내산, 모바일 온누리 10% 할인")
+
+        if st.button("🚀 5개 플랫폼 원고 생성하기", type="primary", use_container_width=True):
+            if not final_api_key:
+                st.error("API Key를 확인해주세요.")
+            elif not product_name or not main_features:
+                st.warning("제품 이름과 주요 특징을 입력해주세요.")
+            else:
+                with st.spinner("AI가 5개 플랫폼 원고를 생성 중입니다..."):
+                    model = genai.GenerativeModel("gemini-3.6-flash")
+                    user_prompt = "- 제품/주제: {}\n- 주요 특징: {}\n- 추가 정보: {}".format(product_name, main_features, extra_info)
+                    
+                    contents = [SYSTEM_PROMPT, user_prompt]
+                    
+                    if uploaded_files:
+                        for file in uploaded_files:
+                            if file.type == "application/pdf":
+                                try:
+                                    pdf_reader = PdfReader(file)
+                                    extracted_text = ""
+                                    for page in pdf_reader.pages:
+                                        extracted_text += page.extract_text() or ""
+                                    contents.append("\n[첨부 PDF 문서 내용 ({})]:\n{}".format(file.name, extracted_text))
+                                except Exception as e:
+                                    st
