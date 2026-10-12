@@ -135,7 +135,7 @@ def reset_inputs_only():
     st.session_state.file_uploader_key += 1
 
 # ==========================================================
-# 2. 프롬프트 시스템 설정 (구문 오류 없는 안정적인 멀티라인 문자열)
+# 2. 프롬프트 시스템 설정
 # ==========================================================
 SYSTEM_PROMPT = """당신은 SNS 콘텐츠 전문 마케팅 카피라이터입니다.
 제공된 정보를 바탕으로 아래 5가지 플랫폼에 최적화된 원고를 일괄 작성해주세요.
@@ -162,7 +162,7 @@ SYSTEM_PROMPT = """당신은 SNS 콘텐츠 전문 마케팅 카피라이터입�
 3. 인스타그램 캐러셀:
 - 슬라이드별(5장~10장) 구성안 제공 (슬라이드 1: 타이틀 / 2~9: 장점 요약 / 마지막: CTA)
 
-4. 인스타그램 릴스/숏츠:
+4. 인스타그램 릴ส/숏츠:
 - 15~30초 숏폼 영상 대본 ([시각 자료 / 자막 / 나레이션])
 
 5. 오늘의집 피드:
@@ -222,7 +222,9 @@ with main_tab1:
             else:
                 with st.spinner("AI가 5개 플랫폼 원고를 생성 중입니다..."):
                     model = genai.GenerativeModel("gemini-3.6-flash")
-                    user_prompt = f"- 제품/주제: {product_name}\n- 주요 특징: {main_features}\n- 추가 정보: {extra_info}"
+                    user_prompt = "- 제품/주제: {}\n- 주요 특징: {}\n- 추가 정보: {}".format(
+                        product_name, main_features, extra_info
+                    )
                     
                     contents = [SYSTEM_PROMPT, user_prompt]
                     
@@ -234,7 +236,7 @@ with main_tab1:
                                     extracted_text = ""
                                     for page in pdf_reader.pages:
                                         extracted_text += page.extract_text() or ""
-                                    contents.append(f"\n[첨부 PDF 문서 내용 ({file.name})]:\n{extracted_text}")
+                                    contents.append("\n[첨부 PDF 문서 내용 ({})]:\n{}".format(file.name, extracted_text))
                                 except Exception as e:
                                     st.warning(f"⚠️ {file.name} PDF 읽기 실패: {e}")
                             else:
@@ -243,15 +245,4 @@ with main_tab1:
                     response = model.generate_content(contents)
                     st.session_state.generated_contents = response.text.replace('\ufeff', '')
 
-        if st.session_state.generated_contents:
-            st.markdown("---")
-            st.subheader("🔧 원고 보완 요청")
-            feedback = st.text_area("수정하고 싶은 내용을 입력하세요", key="feedback_text", placeholder="예: 블로그 원고에 사진 가이드를 더 추가해줘.")
-            
-            if st.button("🔄 보완점 반영 재생성", use_container_width=True):
-                if not feedback:
-                    st.warning("보완할 내용을 입력해주세요.")
-                else:
-                    with st.spinner("피드백을 반영하여 다시 작성 중입니다..."):
-                        model = genai.GenerativeModel("gemini-3.6-flash")
-                        refine_prompt = f"이전 원고:\n{st.session_state.generated_contents}\n\n피드백:\n{feedback}\n\n위 피드백 5개 플랫폼
+        if st.session_state.generated_
