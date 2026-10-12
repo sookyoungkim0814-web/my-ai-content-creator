@@ -2,14 +2,13 @@ import streamlit as st
 import google.generativeai as genai
 import re
 from sqlalchemy import create_engine, text
-from pypdf import PdfReader  # PDF 파일 읽기용 라이브러리 추가
+from pypdf import PdfReader
 
 # ==========================================================
 # 0. DATABASE_URL 기반 Supabase PostgreSQL 연동
 # ==========================================================
 DATABASE_URL = st.secrets.get("DATABASE_URL", "")
 
-# postgresql:// 주소를 psycopg2 드라이버 명시 형태로 자동 변환 (DB 연결 오류 해결)
 if DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
 
@@ -88,7 +87,6 @@ def delete_history_from_db(item_ids):
         st.error(f"DB 삭제 오류: {e}")
         return False
 
-# 텍스트 내 들여쓰기 공백 제거 함수 (코드 블록 방지용)
 def clean_markdown_indent(text_data):
     if not text_data:
         return ""
@@ -105,7 +103,7 @@ st.title("📱 멀티 플랫폼 AI 원고 생성기")
 st.caption("하나의 정보로 네이버 블로그, 인스타 피드/캐러셀/릴스·숏츠, 오늘의집 피드 원고를 동시에 생성합니다.")
 
 # ----------------------------------------------------------
-# 🔑 API Key 불러오기 (Secrets 1순위)
+# 🔑 API Key 불러오기
 # ----------------------------------------------------------
 secret_api_key = st.secrets.get("GEMINI_API_KEY", "")
 user_api_key = st.sidebar.text_input("Gemini API Key (Secrets 설정 시 빈칸)", type="password")
@@ -195,3 +193,79 @@ main_tab1, main_tab2 = st.tabs(["✍️ 원고 생성 및 결과", "📚 저장�
 # ----------------------------------------------------------
 # [MAIN TAB 1] 원고 생성 및 결과
 # ----------------------------------------------------------
+with main_tab1:
+    left_col, right_col = st.columns([1, 1], gap="large")
+
+    with left_col:
+        st.subheader("📝 정보 입력 및 관리")
+        
+        col_reset, _ = st.columns([4, 6])
+        with col_reset:
+            st.button("🔄 전체 초기화", on_click=reset_inputs_only, use_container_width=True)
+
+        uploaded_files = st.file_uploader(
+            "📷 참고 이미지 / 동영상 / PDF 문서 업로드 (선택)", 
+            type=["jpg", "jpeg", "png", "mp4", "mov", "pdf"], 
+            accept_multiple_files=True,
+            key=f"file_uploader_{st.session_state.file_uploader_key}"
+        )
+
+        product_name = st.text_input("제품/장소/주제 이름", key="product_name", placeholder="예: 줄즈 에어2 휴대용 유모차")
+        main_features = st.text_area("주요 특징 및 장점 (줄바꿈 구분)", key="main_features", height=150, placeholder="예:\n- 한 손 한방 폴딩 및 기내 반입 가능\n- 매끄러운 핸들링과 서스펜션")
+        extra_info = st.text_area("추가 정보 (가격, 구매처 등)", key="extra_info", height=100, placeholder="예: 베이비하우스 내돈내산, 모바일 온누리 10% 할인")
+
+        if st.button("🚀 5개 플랫폼 원고 생성하기", type="primary", use_container_width=True):
+            if not final_api_key:
+                st.error("API Key를 확인해주세요.")
+            elif not product_name or not main_features:
+                st.warning("제품 이름과 주요 특징을 입력해주세요.")
+            else:
+                with st.spinner("AI가 5개 플랫폼 원고를 생성 중입니다..."):
+                    model = genai.GenerativeModel("gemini-3.6-flash")
+                    user_prompt = f"- 제품/주제: {product_name}\n- 주요 특징: {main_features}\n- 추가 정보: {extra_info}"
+                    
+                    contents = [SYSTEM_PROMPT, user_prompt]
+                    
+                    if uploaded_files:
+                        for file in uploaded_files:
+                            if file.type == "application/pdf":
+                                try:
+                                    pdf_reader = PdfReader(file)
+                                    extracted_text = ""
+                                    for page in pdf_reader.pages:
+                                        extracted_text += page.extract_text() or ""
+                                    contents.append(f"\n[첨부 PDF 문서 내용 ({file.name})]:\n{extracted_text}")
+                                except Exception as e:
+                                    st.warning(f"⚠️ {file.name} PDF 읽기 실패: {e}")
+                            else:
+                                contents.append({"mime_type": file.type, "data": file.read()})
+                    
+                    response = model.generate_content(contents)
+                    st.session_state.generated_contents = response.text
+
+        if st.session_state.generated_contents:
+            st.markdown("---")
+            st.subheader("🔧 원고 보완 요청")
+            feedback = st.text_area("수정하고 싶은 내용을 입력하세요", key="feedback_text", placeholder="예: 블로그 원고에 사진 가이드를 더 추가해줘.")
+            
+            if st.button("🔄 보완점 반영 재생성", use_container_width=True):
+                if not feedback:
+                    st.warning("보완할 내용을 입력해주세요.")
+                else:
+                    with st.spinner("피드백을 반영하여 다시 작성 중입니다..."):
+                        model = genai.GenerativeModel("gemini-3.6-flash")
+                        refine_prompt = f"이전 원고:\n{st.session_state.generated_contents}\n\n피드백:\n{feedback}\n\n위 피드백 5개 플랫폼 모두에 반영해서 다시 작성해주세요."
+                        response = model.generate_content([SYSTEM_PROMPT, refine_prompt])
+                        st.session_state.generated_contents = response.text
+                        st.rerun()
+
+    with right_col:
+        st.subheader("📄 생성된 원고 결과")
+        
+        if st.session_state.generated_contents:
+            raw_text = st.session_state.generated_contents
+            platforms = ["네이버 블로그", "인스타그램 피드", "인스타그램 캐러셀", "인스타그램 릴스/숏츠", "오늘의집 피드"]
+            parsed_contents = {}
+            
+            for i, platform in enumerate(platforms):
+                if i < len(platforms) - 1:
