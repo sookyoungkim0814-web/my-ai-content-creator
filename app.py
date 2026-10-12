@@ -100,7 +100,7 @@ def clean_markdown_indent(text_data):
 st.set_page_config(page_title="멀티 플랫폼 AI 원고 생성기", layout="wide")
 
 st.title("📱 멀티 플랫폼 AI 원고 생성기")
-st.caption("하나의 정보로 네이버 블로그, 인스타 피드/캐러셀/릴스·숏츠, 오늘의집 피드 원고를 동시에 생성합니다.")
+st.caption("하나의 정보로 네이버 블로그, 인스타 피드/캐러셀/릴ส·숏츠, 오늘의집 피드 원고를 동시에 생성합니다.")
 
 # ----------------------------------------------------------
 # 🔑 API Key 불러오기
@@ -134,17 +134,113 @@ def reset_inputs_only():
     st.session_state.file_uploader_key += 1
 
 # ==========================================================
-# 2. 프롬프트 시스템 설정
+# 2. 프롬프트 시스템 설정 (구문 오류 방지용 단일 문자열 조합)
 # ==========================================================
-SYSTEM_PROMPT = """당신은 SNS 콘텐츠 전문 마케팅 카피라이터입니다. 
-제공된 정보를 바탕으로 아래 5가지 플랫폼에 최적화된 원고를 일괄 작성해주세요.
+SYSTEM_PROMPT = (
+    "당신은 SNS 콘텐츠 전문 마케팅 카피라이터입니다.\n"
+    "제공된 정보를 바탕으로 아래 5가지 플랫폼에 최적화된 원고를 일괄 작성해주세요.\n\n"
+    "[💥 최우선 절대 지침]\n"
+    "1. 각 플랫폼 원고 '내부'에는 어떠한 형태의 구분선(---, ***, ===, ___ 등)도 절대 사용하지 마세요.\n"
+    "2. 문단 맨 앞에 들여쓰기(공백/탭)를 넣지 마세요. 바로 글자를 시작해 주세요.\n\n"
+    "1. **네이버 블로그**:\n"
+    "- 모바일로 보았을 때 자연스럽고 읽기 편한 띄어쓰기 및 줄바꿈 적용\n"
+    "- 사람들의 관심을 불러일으키는 매력적인 제목 작성\n"
+    "- 숫자 소제목(이모지 활용 및 BOLD **소제목**)으로 내용 구조화\n"
+    "- 친근하고 정성스러운 말투 ('~했어요', '~입니다' 등) 및 이모지 적절히 활용\n"
+    "- 본론 시작 전 구매 꿀팁을 바로 배치 (구매 꿀팁 등 요약/정리가 필요한 부분은 왼쪽 정렬 느낌의 불렛으로 작성)\n"
+    "- 과도하게 방대한 내용보다는 필요한 핵심 내용 위주로 적절히 작성 (모바일에서 읽기 피곤하지 않도록 전체 공백 제외 1,000자 이내로 간결하게 작성)\n"
+    "- 경험 위주의 정보성 내용 작성 (억지로 가짜 경험을 만들지 말고 제공된 정보 기반으로 리얼하게 작성)\n"
+    "- 글 마지막에 요약 및 맺음말 작성\n\n"
+    "2. **인스타그램 피드**:\n"
+    "- 가독성 높은 감성적/소통형 캡션, 불렛 등 이모지를 통한 줄바꿈 활용, 적절한 이모지\n"
+    "- 하단에 관련 인기 태그(#) 15~20개 포함\n\n"
+    "3. **인스타그램 캐러셀**:\n"
+    "- 슬라이드별(5장~10장) 구성안 제공 (슬라이드 1: 타이틀 / 2~9: 장점 요약 / 마지막: CTA)\n\n"
+    "4. **인스타그램 릴스/숏츠**:\n"
+    "- 15~30초 숏폼 영상 대본 ([시각 자료 / 자막 / 나레이션])\n\n"
+    "5. **오늘의집 피드**:\n"
+    "- 감성적인 리빙/육아 라이프스타일 톤앤매너, 공간/스타일/사용성 위주, 브랜드 및 해시태그 포함\n\n"
+    "응답은 반드시 아래 5개 구분 태그를 정확히 사용하여 출력하세요:\n\n"
+    "[네이버 블로그]\n(원고 내용)\n\n"
+    "[인스타그램 피드]\n(원고 내용)\n\n"
+    "[인스타그램 캐러셀]\n(원고 내용)\n\n"
+    "[인스타그램 릴스/숏츠]\n(원고 내용)\n\n"
+    "[오늘의집 피드]\n(원고 내용)"
+)
 
-[💥 최우선 절대 지침]
-1. 각 플랫폼 원고 "내부"에는 어떠한 형태의 구분선(---, ***, ===, ___ 등)도 절대 사용하지 마세요. 
-2. 문단 맨 앞에 들여쓰기(공백/탭)를 넣지 마세요. 바로 글자를 시작해 주세요.
+# ==========================================================
+# 3. 메인 탭 구성
+# ==========================================================
+main_tab1, main_tab2 = st.tabs(["✍️ 원고 생성 및 결과", "📚 저장된 원고 관리"])
 
-1. **네이버 블로그**:
-   - 모바일로 보았을 때 자연스럽고 읽기 편한 띄어쓰기 및 줄바꿈 적용
-   - 사람들의 관심을 불러일으키는 매력적인 제목 작성
-   - 숫자 소제목(이모지 활용 및 BOLD **소제목**)으로 내용 구조화
-   - 친근하고 정성스러운 말투 ('~했어요
+# ----------------------------------------------------------
+# [MAIN TAB 1] 원고 생성 및 결과
+# ----------------------------------------------------------
+with main_tab1:
+    left_col, right_col = st.columns([1, 1], gap="large")
+
+    with left_col:
+        st.subheader("📝 정보 입력 및 관리")
+        
+        col_reset, _ = st.columns([4, 6])
+        with col_reset:
+            st.button("🔄 전체 초기화", on_click=reset_inputs_only, use_container_width=True)
+
+        uploaded_files = st.file_uploader(
+            "📷 참고 이미지 / 동영상 / PDF 문서 업로드 (선택)", 
+            type=["jpg", "jpeg", "png", "mp4", "mov", "pdf"], 
+            accept_multiple_files=True,
+            key=f"file_uploader_{st.session_state.file_uploader_key}"
+        )
+
+        product_name = st.text_input("제품/장소/주제 이름", key="product_name", placeholder="예: 줄즈 에어2 휴대용 유모차")
+        main_features = st.text_area("주요 특징 및 장점 (줄바꿈 구분)", key="main_features", height=150, placeholder="예:\n- 한 손 한방 폴딩 및 기내 반입 가능\n- 매끄러운 핸들링과 서스펜션")
+        extra_info = st.text_area("추가 정보 (가격, 구매처 등)", key="extra_info", height=100, placeholder="예: 베이비하우스 내돈내산, 모바일 온누리 10% 할인")
+
+        if st.button("🚀 5개 플랫폼 원고 생성하기", type="primary", use_container_width=True):
+            if not final_api_key:
+                st.error("API Key를 확인해주세요.")
+            elif not product_name or not main_features:
+                st.warning("제품 이름과 주요 특징을 입력해주세요.")
+            else:
+                with st.spinner("AI가 5개 플랫폼 원고를 생성 중입니다..."):
+                    model = genai.GenerativeModel("gemini-3.6-flash")
+                    user_prompt = f"- 제품/주제: {product_name}\n- 주요 특징: {main_features}\n- 추가 정보: {extra_info}"
+                    
+                    contents = [SYSTEM_PROMPT, user_prompt]
+                    
+                    if uploaded_files:
+                        for file in uploaded_files:
+                            if file.type == "application/pdf":
+                                try:
+                                    pdf_reader = PdfReader(file)
+                                    extracted_text = ""
+                                    for page in pdf_reader.pages:
+                                        extracted_text += page.extract_text() or ""
+                                    contents.append(f"\n[첨부 PDF 문서 내용 ({file.name})]:\n{extracted_text}")
+                                except Exception as e:
+                                    st.warning(f"⚠️ {file.name} PDF 읽기 실패: {e}")
+                            else:
+                                contents.append({"mime_type": file.type, "data": file.read()})
+                    
+                    response = model.generate_content(contents)
+                    st.session_state.generated_contents = response.text
+
+        if st.session_state.generated_contents:
+            st.markdown("---")
+            st.subheader("🔧 원고 보완 요청")
+            feedback = st.text_area("수정하고 싶은 내용을 입력하세요", key="feedback_text", placeholder="예: 블로그 원고에 사진 가이드를 더 추가해줘.")
+            
+            if st.button("🔄 보완점 반영 재생성", use_container_width=True):
+                if not feedback:
+                    st.warning("보완할 내용을 입력해주세요.")
+                else:
+                    with st.spinner("피드백을 반영하여 다시 작성 중입니다..."):
+                        model = genai.GenerativeModel("gemini-3.6-flash")
+                        refine_prompt = f"이전 원고:\n{st.session_state.generated_contents}\n\n피드백:\n{feedback}\n\n위 피드백 5개 플랫폼 모두에 반영해서 다시 작성해주세요."
+                        response = model.generate_content([SYSTEM_PROMPT, refine_prompt])
+                        st.session_state.generated_contents = response.text
+                        st.rerun()
+
+    with right_col:
+        st.subheader("📄 생성된 원고 결과")
