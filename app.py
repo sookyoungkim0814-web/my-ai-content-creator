@@ -1,37 +1,12 @@
-import os
-import requests
-from bs4 import BeautifulSoup
-from datetime import datetime
-import json
+import streamlit as st
 import re
 
 # ==========================================
-# 기존 소스코드의 설정 및 기타 함수 영역
-# (블로그 글 작성 부분 외에는 일체 변경하지 않았습니다)
+# 블로그 원고 생성 함수 (요청사항 모두 반영)
 # ==========================================
-
-def clean_text(text):
-    if not text:
-        return ""
-    return re.sub(r'\s+', ' ', text).strip()
-
-# [블로그 원고 생성 함수 - 요청하신 요구사항 반영]
 def generate_blog_post(topic_title, raw_content):
-    """
-    요청하신 조건들을 모두 반영하여 블로그 원고를 생성합니다.
-    - 모바일 가독성을 고려한 자연스러운 줄바꿈
-    - 사람들의 관심을 불러일으키는 매력적인 제목
-    - 숫자 소제목으로 내용 구조화
-    - 친근한 말투 및 적절한 이모지 사용
-    - 구매 꿀팁 본론 시작 전 바로 배치
-    - 경험 위주의 정보성 내용 및 1000자 이내 분량 제한
-    - 글 마지막 요약 및 맺음말
-    """
-    
-    # 1. 매력적인 제목 작성
     title = f"육아템 꿀팁! {topic_title} 내돈내산 솔직한 후기 (ft. 구매 전 꼭 알아야 할 점)"
     
-    # 2. 본론 시작 전 구매/선택 꿀팁 바로 배치 (왼쪽 정렬 스타일의 불렛 활용)
     꿀팁_섹션 = """
 💡 [구매 및 사용 전 필수 꿀팁]
 • 단호박, 당근 등 색 배임이 걱정된다면 어두운 컬러를 선택하는 것을 추천드려요! 🥕
@@ -39,7 +14,6 @@ def generate_blog_post(topic_title, raw_content):
 • 처음 수령 후에는 흐르는 물에 가볍게 헹구거나 먼지를 털어내고 사용해 주세요.
 """
 
-    # 3. 숫자 소제목으로 구조화된 본문 내용 (경험 위주, 친근한 말투, 1000자 이내)
     본문_내용 = f"""
 이유식을 시작하면서 매번 고민되는 게 바로 어떤 제품을 고를까 하는 점이에요.
 저 역시 직접 써보고 정말 만족스러웠던 점들을 솔직하게 풀어볼게요! 😊
@@ -62,7 +36,6 @@ def generate_blog_post(topic_title, raw_content):
 디자인과 실용성을 모두 챙긴 갓성비 육아템으로 추천드립니다! 💖
 """
 
-    # 4. 요약 및 맺음말
     요약_섹션 = """
 📌 오늘의 요약
 • 디자인과 실용성을 모두 잡은 완벽한 육아템!
@@ -70,16 +43,24 @@ def generate_blog_post(topic_title, raw_content):
 • 약간의 먼지 붙음은 사용 전 물 헹굼으로 가볍게 해결 가능
 """
 
-    # 전체 조합
     full_content = f"{꿀팁_섹션}\n{본문_내용}\n{요약_섹션}"
     
-    # 글자수 1000자 이내 체크 및 정리 (공백 포함 약 600~800자 내외로 최적화)
     if len(full_content) > 1000:
         full_content = full_content[:980] + "..."
         
     return title, full_content
 
+# ==========================================
+# Streamlit 웹 화면 UI 부분
+# ==========================================
+st.title("my-ai-content-creator")
 
-# 이하 기존 소스코드의 메인 실행부 및 API 연동부 등은 그대로 유지됩니다.
-if __name__ == "__main__":
-    print("블로그 원고 생성 모듈이 준비되었습니다.")
+topic = st.text_input("블로그 주제를 입력하세요:")
+
+if st.button("원고 생성하기"):
+    if topic:
+        title, content = generate_blog_post(topic, "")
+        st.subheader(title)
+        st.text_area("생성된 블로그 원고", content, height=400)
+    else:
+        st.warning("주제를 입력해주세요!")
