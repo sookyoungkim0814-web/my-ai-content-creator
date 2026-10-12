@@ -27,17 +27,16 @@ def get_db_engine():
             }
         )
         with engine.connect() as conn:
-            conn.execute(text("""
-                CREATE TABLE IF NOT EXISTS history (
-                    id SERIAL PRIMARY KEY,
-                    content TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-                );
-            """))
-            conn.execute(text("""
-                ALTER TABLE history 
-                ADD COLUMN IF NOT EXISTS product_name TEXT;
-            """))
+            conn.execute(text(
+                "CREATE TABLE IF NOT EXISTS history ("
+                "id SERIAL PRIMARY KEY, "
+                "content TEXT, "
+                "created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"
+            ))
+            conn.execute(text(
+                "ALTER TABLE history "
+                "ADD COLUMN IF NOT EXISTS product_name TEXT;"
+            ))
             conn.commit()
         return engine
     except Exception as e:
@@ -135,37 +134,110 @@ def reset_inputs_only():
     st.session_state.file_uploader_key += 1
 
 # ==========================================================
-# 2. 프롬프트 시스템 설정
+# 2. 프롬프트 시스템 설정 (구문 오류 원천 차단형 단일 문자열 조합)
 # ==========================================================
-SYSTEM_PROMPT = """당신은 SNS 콘텐츠 전문 마케팅 카피라이터입니다.
-제공된 정보를 바탕으로 아래 5가지 플랫폼에 최적화된 원고를 일괄 작성해주세요.
+SYSTEM_PROMPT = (
+    "당신은 SNS 콘텐츠 전문 마케팅 카피라이터입니다.\n"
+    "제공된 정보를 바탕으로 아래 5가지 플랫폼에 최적화된 원고를 일괄 작성해주세요.\n\n"
+    "[💥 최우선 절대 지침]\n"
+    "1. 각 플랫폼 원고 내부에는 어떠한 형태의 구분선도 절대 사용하지 마세요.\n"
+    "2. 문단 맨 앞에 들여쓰기나 탭을 넣지 말고 바로 글자를 시작해 주세요.\n\n"
+    "1. 네이버 블로그:\n"
+    "- 모바일 화면에서 읽기 편하게 줄바꿈과 띄어쓰기를 철저히 반영\n"
+    "- 글 최상단 시작 부분에 다정한 첫인사(예: 안녕하세요!) 반드시 포함\n"
+    "- 이목을 사로잡는 매력적인 제목 작성\n"
+    "- 숫자 소제목(이모지 필수 포함 및 BOLD **소제목**)으로 내용 구조화\n"
+    "- 친근하고 다정한 말투(~했어요 등)와 어울리는 이모지(😊, ✨, 💡, 💖 등) 풍부하게 사용\n"
+    "- 본론 시작 직전에 구매 및 사용 꿀팁을 바로 배치하고, 요약/정리는 불렛(•)으로 작성\n"
+    "- 모바일 가독성을 위해 핵심 위주로 공백 제외 1,000자 이내로 간결하게 작성\n"
+    "- 경험 위주의 리얼한 정보성 내용 작성\n"
+    "- 글 마지막에 요약 및 맺음말을 적고, 그 아래에 다정한 인삿말(예: 오늘도 행복한 하루 보내세요! 💖)을 반드시 포함\n\n"
+    "2. 인스타그램 피드:\n"
+    "- 가독성 높은 감성적/소통형 캡션, 불렛 및 이모지 활용\n"
+    "- 하단에 관련 인기 태그(#) 15~20개 포함\n\n"
+    "3. 인스타그램 캐러셀:\n"
+    "- 슬라이드별(5장~10장) 구성안 제공 (슬라이드 1: 타이틀 / 2~9: 장점 요약 / 마지막: CTA)\n\n"
+    "4. 인스타그램 릴스/숏츠:\n"
+    "- 15~30초 숏폼 영상 대본 ([시각 자료 / 자막 / 나레이션])\n\n"
+    "5. 오늘의집 피드:\n"
+    "- 감성적인 리빙/육아 라이프스타일 톤앤매너, 공간/스타일/사용성 위주, 브랜드 및 해시태그 포함\n\n"
+    "응답은 반드시 아래 5개 구분 태그를 정확히 사용하여 출력하세요:\n\n"
+    "[네이버 블로그]\n(원고 내용)\n\n"
+    "[인스타그램 피드]\n(원고 내용)\n\n"
+    "[인스타그램 캐러셀]\n(원고 내용)\n\n"
+    "[인스타그램 릴스/숏츠]\n(원고 내용)\n\n"
+    "[오늘의집 피드]\n(원고 내용)"
+)
 
-[💥 최우선 절대 지침]
-1. 각 플랫폼 원고 내부에는 어떠한 형태의 구분선도 절대 사용하지 마세요.
-2. 문단 맨 앞에 들여쓰기나 탭을 넣지 말고 바로 글자를 시작해 주세요.
+# ==========================================================
+# 3. 메인 탭 구성
+# ==========================================================
+main_tab1, main_tab2 = st.tabs(["✍️ 원고 생성 및 결과", "📚 저장된 원고 관리"])
 
-1. 네이버 블로그:
-- 모바일 화면에서 읽기 편하게 줄바꿈과 띄어쓰기를 철저히 반영
-- 글 최상단 시작 부분에 다정한 첫인사(예: 안녕하세요!) 반드시 포함
-- 이목을 사로잡는 매력적인 제목 작성
-- 숫자 소제목(이모지 필수 포함 및 BOLD **소제목**)으로 내용 구조화
-- 친근하고 다정한 말투(~했어요 등)와 어울리는 이모지(😊, ✨, 💡, 💖 등) 풍부하게 사용
-- 본론 시작 직전에 구매 및 사용 꿀팁을 바로 배치하고, 요약/정리는 불렛(•)으로 작성
-- 모바일 가독성을 위해 핵심 위주로 공백 제외 1,000자 이내로 간결하게 작성
-- 경험 위주의 리얼한 정보성 내용 작성
-- 글 마지막에 요약 및 맺음말을 적고, 그 아래에 다정한 인삿말(예: 오늘도 행복한 하루 보내세요! 💖)을 반드시 포함
+# ----------------------------------------------------------
+# [MAIN TAB 1] 원고 생성 및 결과
+# ----------------------------------------------------------
+with main_tab1:
+    left_col, right_col = st.columns([1, 1], gap="large")
 
-2. 인스타그램 피드:
-- 가독성 높은 감성적/소통형 캡션, 불렛 및 이모지 활용
-- 하단에 관련 인기 태그(#) 15~20개 포함
+    with left_col:
+        st.subheader("📝 정보 입력 및 관리")
+        
+        col_reset, _ = st.columns([4, 6])
+        with col_reset:
+            st.button("🔄 전체 초기화", on_click=reset_inputs_only, use_container_width=True)
 
-3. 인스타그램 캐러셀:
-- 슬라이드별(5장~10장) 구성안 제공 (슬라이드 1: 타이틀 / 2~9: 장점 요약 / 마지막: CTA)
+        uploaded_files = st.file_uploader(
+            "📷 참고 이미지 / 동영상 / PDF 문서 업로드 (선택)", 
+            type=["jpg", "jpeg", "png", "mp4", "mov", "pdf"], 
+            accept_multiple_files=True,
+            key=f"file_uploader_{st.session_state.file_uploader_key}"
+        )
 
-4. 인스타그램 릴스/숏츠:
-- 15~30초 숏폼 영상 대본 ([시각 자료 / 자막 / 나레이션])
+        product_name = st.text_input("제품/장소/주제 이름", key="product_name", placeholder="예: 줄즈 에어2 휴대용 유모차")
+        main_features = st.text_area("주요 특징 및 장점 (줄바꿈 구분)", key="main_features", height=150, placeholder="예:\n- 한 손 한방 폴딩 및 기내 반입 가능\n- 매끄러운 핸들링과 서스펜션")
+        extra_info = st.text_area("추가 정보 (가격, 구매처 등)", key="extra_info", height=100, placeholder="예: 베이비하우스 내돈내산, 모바일 온누리 10% 할인")
 
-5. 오늘의집 피드:
-- 감성적인 리빙/육아 라이프스타일 톤앤매너, 공간/스타일/사용성 위주, 브랜드 및 해시태그 포함
+        if st.button("🚀 5개 플랫폼 원고 생성하기", type="primary", use_container_width=True):
+            if not final_api_key:
+                st.error("API Key를 확인해주세요.")
+            elif not product_name or not main_features:
+                st.warning("제품 이름과 주요 특징을 입력해주세요.")
+            else:
+                with st.spinner("AI가 5개 플랫폼 원고를 생성 중입니다..."):
+                    model = genai.GenerativeModel("gemini-3.6-flash")
+                    user_prompt = "- 제품/주제: {}\n- 주요 특징: {}\n- 추가 정보: {}".format(
+                        product_name, main_features, extra_info
+                    )
+                    
+                    contents = [SYSTEM_PROMPT, user_prompt]
+                    
+                    if uploaded_files:
+                        for file in uploaded_files:
+                            if file.type == "application/pdf":
+                                try:
+                                    pdf_reader = PdfReader(file)
+                                    extracted_text = ""
+                                    for page in pdf_reader.pages:
+                                        extracted_text += page.extract_text() or ""
+                                    contents.append("\n[첨부 PDF 문서 내용 ({})]:\n{}".format(file.name, extracted_text))
+                                except Exception as e:
+                                    st.warning(f"⚠️ {file.name} PDF 읽기 실패: {e}")
+                            else:
+                                contents.append({"mime_type": file.type, "data": file.read()})
+                    
+                    response = model.generate_content(contents)
+                    st.session_state.generated_contents = response.text.replace('\ufeff', '')
 
-응답은 반드시 아래
+        if st.session_state.generated_contents:
+            st.markdown("---")
+            st.subheader("🔧 원고 보완 요청")
+            feedback = st.text_area("수정하고 싶은 내용을 입력하세요", key="feedback_text", placeholder="예: 블로그 원고에 사진 가이드를 더 추가해줘.")
+            
+            if st.button("🔄 보완점 반영 재생성", use_container_width=True):
+                if not feedback:
+                    st.warning("보완할 내용을 입력해주세요.")
+                else:
+                    with st.spinner("피드백을 반영하여 다시 작성 중입니다..."):
+                        model = genai.GenerativeModel("gemini-3.6-flash")
+                        refine_prompt = "이전 원고:\n{}\n\n피드백:\n{}\n\n위 피
