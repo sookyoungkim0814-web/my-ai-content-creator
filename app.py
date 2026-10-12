@@ -1,66 +1,197 @@
 import streamlit as st
+import google.generativeai as genai
 import re
+from sqlalchemy import create_engine, text
+from pypdf import PdfReader  # PDF 파일 읽기용 라이브러리 추가
 
-# ==========================================
-# 블로그 원고 생성 함수 (요청사항 모두 반영)
-# ==========================================
-def generate_blog_post(topic_title, raw_content):
-    title = f"육아템 꿀팁! {topic_title} 내돈내산 솔직한 후기 (ft. 구매 전 꼭 알아야 할 점)"
-    
-    꿀팁_섹션 = """
-💡 [구매 및 사용 전 필수 꿀팁]
-• 단호박, 당근 등 색 배임이 걱정된다면 어두운 컬러를 선택하는 것을 추천드려요! 🥕
-• 첫 소독 시 1~2분 내로 짧게 가볍게 해주셔야 실리콘 변형을 막을 수 있답니다.
-• 처음 수령 후에는 흐르는 물에 가볍게 헹구거나 먼지를 털어내고 사용해 주세요.
+# ==========================================================
+# 0. DATABASE_URL 기반 Supabase PostgreSQL 연동
+# ==========================================================
+DATABASE_URL = st.secrets.get("DATABASE_URL", "")
+
+# postgresql:// 주소를 psycopg2 드라이버 명시 형태로 자동 변환 (DB 연결 오류 해결)
+if DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = DATABASE_URL.replace("postgresql://", "postgresql+psycopg2://", 1)
+
+@st.cache_resource
+def get_db_engine():
+    if not DATABASE_URL:
+        st.error("⚠️ Secrets에 DATABASE_URL이 설정되어 있지 않습니다.")
+        return None
+    try:
+        engine = create_engine(
+            DATABASE_URL, 
+            pool_pre_ping=True,
+            connect_args={
+                "sslmode": "require", 
+                "connect_timeout": 10
+            }
+        )
+        with engine.connect() as conn:
+            conn.execute(text("""
+                CREATE TABLE IF NOT EXISTS history (
+                    id SERIAL PRIMARY KEY,
+                    content TEXT,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                );
+            """))
+            conn.execute(text("""
+                ALTER TABLE history 
+                ADD COLUMN IF NOT EXISTS product_name TEXT;
+            """))
+            conn.commit()
+        return engine
+    except Exception as e:
+        st.error(f"❌ DB 연결 실패: {e}")
+        return None
+
+engine = get_db_engine()
+
+def load_history_from_db():
+    if not engine:
+        return []
+    try:
+        with engine.connect() as conn:
+            result = conn.execute(text("SELECT id, product_name, content FROM history ORDER BY id DESC;"))
+            return [{"id": row[0], "product_name": row[1], "content": row[2]} for row in result.fetchall()]
+    except Exception as e:
+        st.error(f"DB 데이터 불러오기 오류: {e}")
+        return []
+
+def save_history_to_db(product_name, content):
+    if not engine:
+        return False
+    try:
+        with engine.connect() as conn:
+            conn.execute(
+                text("INSERT INTO history (product_name, content) VALUES (:p_name, :cnt);"),
+                {"p_name": product_name, "cnt": content}
+            )
+            conn.commit()
+        return True
+    except Exception as e:
+        st.error(f"DB 저장 오류: {e}")
+        return False
+
+def delete_history_from_db(item_ids):
+    if not engine or not item_ids:
+        return False
+    try:
+        with engine.connect() as conn:
+            conn.execute(
+                text("DELETE FROM history WHERE id = ANY(:ids);"),
+                {"ids": item_ids}
+            )
+            conn.commit()
+        return True
+    except Exception as e:
+        st.error(f"DB 삭제 오류: {e}")
+        return False
+
+# 텍스트 내 들여쓰기 공백 제거 함수 (코드 블록 방지용)
+def clean_markdown_indent(text_data):
+    if not text_data:
+        return ""
+    lines = text_data.split("\n")
+    cleaned = [line.lstrip() for line in lines]
+    return "\n".join(cleaned)
+
+# ==========================================================
+# 1. 페이지 기본 설정
+# ==========================================================
+st.set_page_config(page_title="멀티 플랫폼 AI 원고 생성기", layout="wide")
+
+st.title("📱 멀티 플랫폼 AI 원고 생성기")
+st.caption("하나의 정보로 네이버 블로그, 인스타 피드/캐러셀/릴스·숏츠, 오늘의집 피드 원고를 동시에 생성합니다.")
+
+# ----------------------------------------------------------
+# 🔑 API Key 불러오기 (Secrets 1순위)
+# ----------------------------------------------------------
+secret_api_key = st.secrets.get("GEMINI_API_KEY", "")
+user_api_key = st.sidebar.text_input("Gemini API Key (Secrets 설정 시 빈칸)", type="password")
+final_api_key = user_api_key if user_api_key else secret_api_key
+
+if final_api_key:
+    genai.configure(api_key=final_api_key)
+    st.sidebar.success("✅ API Key가 연결되었습니다.")
+else:
+    st.sidebar.warning("⚠️ API Key를 확인해주세요.")
+
+# ----------------------------------------------------------
+# 세션 상태 초기화
+# ----------------------------------------------------------
+if "generated_contents" not in st.session_state:
+    st.session_state.generated_contents = None
+if "saved_history" not in st.session_state:
+    st.session_state.saved_history = load_history_from_db()
+if "file_uploader_key" not in st.session_state:
+    st.session_state.file_uploader_key = 0
+
+def reset_inputs_only():
+    st.session_state["product_name"] = ""
+    st.session_state["main_features"] = ""
+    st.session_state["extra_info"] = ""
+    st.session_state["feedback_text"] = ""
+    st.session_state.generated_contents = None
+    st.session_state.file_uploader_key += 1
+
+# ==========================================================
+# 2. 프롬프트 시스템 설정 (네이버 블로그 스타일 업데이트 반영)
+# ==========================================================
+SYSTEM_PROMPT = """
+당신은 SNS 콘텐츠 전문 마케팅 카피라이터입니다. 
+제공된 정보를 바탕으로 아래 5가지 플랫폼에 최적화된 원고를 일괄 작성해주세요.
+
+[💥 최우선 절대 지침]
+1. 각 플랫폼 원고 "내부"에는 어떠한 형태의 구분선(---, ***, ===, ___ 등)도 절대 사용하지 마세요. 
+2. 문단 맨 앞에 들여쓰기(공백/탭)를 넣지 마세요. 바로 글자를 시작해 주세요.
+
+1. **네이버 블로그**:
+   - 모바일로 보았을 때 자연스럽고 읽기 편한 띄어쓰기 및 줄바꿈 적용
+   - 사람들의 관심을 불러일으키는 매력적인 제목 작성
+   - 숫자 소제목(이모지 활용 및 BOLD **소제목**)으로 내용 구조화
+   - 친근하고 정성스러운 말투 ('~했어요', '~입니다' 등) 및 이모지 적절히 활용
+   - 본론 시작 전 구매 꿀팁을 바로 배치 (구매 꿀팁 등 요약/정리가 필요한 부분은 왼쪽 정렬 느낌의 불렛으로 작성)
+   - 과도하게 방대한 내용보다는 필요한 핵심 내용 위주로 적절히 작성 (모바일에서 읽기 피곤하지 않도록 전체 공백 제외 1,000자 이내로 간결하게 작성)
+   - 경험 위주의 정보성 내용 작성 (억지로 가짜 경험을 만들지 말고 제공된 정보 기반으로 리얼하게 작성)
+   - 글 마지막에 요약 및 맺음말 작성
+
+2. **인스타그램 피드**:
+   - 가독성 높은 감성적/소통형 캡션, 불렛 등 이모지를 통한 줄바꿈 활용, 적절한 이모지
+   - 하단에 관련 인기 태그(#) 15~20개 포함
+
+3. **인스타그램 캐러셀**:
+   - 슬라이드별(5장~10장) 구성안 제공 (슬라이드 1: 타이틀 / 2~9: 장점 요약 / 마지막: CTA)
+
+4. **인스타그램 릴스/숏츠**:
+   - 15~30초 숏폼 영상 대본 ([시각 자료 / 자막 / 나레이션])
+
+5. **오늘의집 피드**:
+   - 감성적인 리빙/육아 라이프스타일 톤앤매너, 공간/스타일/사용성 위주, 브랜드 및 해시태그 포함
+
+응답은 반드시 아래 5개 구분 태그를 정확히 사용하여 출력하세요:
+
+[네이버 블로그]
+(원고 내용)
+
+[인스타그램 피드]
+(원고 내용)
+
+[인스타그램 캐러셀]
+(원고 내용)
+
+[인스타그램 릴스/숏츠]
+(원고 내용)
+
+[오늘의집 피드]
+(원고 내용)
 """
 
-    본문_내용 = f"""
-이유식을 시작하면서 매번 고민되는 게 바로 어떤 제품을 고를까 하는 점이에요.
-저 역시 직접 써보고 정말 만족스러웠던 점들을 솔직하게 풀어볼게요! 😊
+# ==========================================================
+# 3. 메인 탭 구성
+# ==========================================================
+main_tab1, main_tab2 = st.tabs(["✍️ 원고 생성 및 결과", "📚 저장된 원고 관리"])
 
-1️⃣ 이 제품을 선택한 진짜 이유
-이유식 초기나 중기 때 단호박이나 당근을 자주 만들다 보면 붉은색, 노란색으로 물들어서 속상했던 경험, 다들 있으실 거예요.
-그래서 이번에는 색 배임 걱정을 확 줄여주는 제품으로 골라봤는데, 실제로 써보니 디자인도 너무 귀엽고 앙증맞아서 밥 먹는 시간이 훨씬 즐거워졌답니다. 👍
-
-2️⃣ 사용해보니 느낀 솔직한 장점
-- 가볍고 안전한 소재로 만들어져 아이가 입에 넣어도 안심할 수 있어요.
-- 열탕 소독이나 식기세척기 사용이 모두 가능해서 엄마의 설거지 지옥을 확 줄여준답니다! 👏
-- 디자인이 깔끔하고 세련돼서 인테리어를 해치지 않아요.
-
-3️⃣ 아쉬운 점과 해결 꿀팁
-장점이 너무나 많은 제품이지만, 소재 특성상 먼지가 살짝 붙는 건 어쩔 수 없더라고요. ㅠㅠ
-그럴 때는 사용하기 전에 물로 가볍게 헹궈주거나 물티슈로 쓱 닦아내면 금방 해결되니까 크게 걱정하지 않으셔도 돼요! ✨
-
-4️⃣ 총평 및 마무리
-이유식 용기로 고민하고 계신다면, 정말 후회 없는 선택이 되실 거예요.
-디자인과 실용성을 모두 챙긴 갓성비 육아템으로 추천드립니다! 💖
-"""
-
-    요약_섹션 = """
-📌 오늘의 요약
-• 디자인과 실용성을 모두 잡은 완벽한 육아템!
-• 열탕 소독 및 식기세척기 사용 가능으로 관리 편리 🧼
-• 약간의 먼지 붙음은 사용 전 물 헹굼으로 가볍게 해결 가능
-"""
-
-    full_content = f"{꿀팁_섹션}\n{본문_내용}\n{요약_섹션}"
-    
-    if len(full_content) > 1000:
-        full_content = full_content[:980] + "..."
-        
-    return title, full_content
-
-# ==========================================
-# Streamlit 웹 화면 UI 부분
-# ==========================================
-st.title("my-ai-content-creator")
-
-topic = st.text_input("블로그 주제를 입력하세요:")
-
-if st.button("원고 생성하기"):
-    if topic:
-        title, content = generate_blog_post(topic, "")
-        st.subheader(title)
-        st.text_area("생성된 블로그 원고", content, height=400)
-    else:
-        st.warning("주제를 입력해주세요!")
+# ----------------------------------------------------------
+# [MAIN TAB 1] 원고 생성 및 결과
+# ----------------------------------------------------------
