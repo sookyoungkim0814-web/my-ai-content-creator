@@ -107,4 +107,48 @@ st.caption("하나의 정보로 네이버 블로그, 인스타 피드/캐러셀/
 # ----------------------------------------------------------
 secret_api_key = st.secrets.get("GEMINI_API_KEY", "")
 user_api_key = st.sidebar.text_input("Gemini API Key (Secrets 설정 시 빈칸)", type="password")
-final_api
+final_api_key = user_api_key if user_api_key else secret_api_key
+
+if final_api_key:
+    genai.configure(api_key=final_api_key)
+    st.sidebar.success("✅ API Key가 연결되었습니다.")
+else:
+    st.sidebar.warning("⚠️ API Key를 확인해주세요.")
+
+# ----------------------------------------------------------
+# 세션 상태 초기화
+# ----------------------------------------------------------
+if "generated_contents" not in st.session_state:
+    st.session_state.generated_contents = None
+if "saved_history" not in st.session_state:
+    st.session_state.saved_history = load_history_from_db()
+if "file_uploader_key" not in st.session_state:
+    st.session_state.file_uploader_key = 0
+
+def reset_inputs_only():
+    st.session_state["product_name"] = ""
+    st.session_state["main_features"] = ""
+    st.session_state["extra_info"] = ""
+    st.session_state["feedback_text"] = ""
+    st.session_state.generated_contents = None
+    st.session_state.file_uploader_key += 1
+
+# ==========================================================
+# 2. 프롬프트 시스템 설정
+# ==========================================================
+SYSTEM_PROMPT = (
+    "당신은 SNS 콘텐츠 전문 마케팅 카피라이터입니다.\n"
+    "제공된 정보를 바탕으로 아래 5가지 플랫폼에 최적화된 원고를 일괄 작성해주세요.\n\n"
+    "[💥 최우선 절대 지침]\n"
+    "1. 각 플랫폼 원고 '내부'에는 어떠한 형태의 구분선(---, ***, ===, ___ 등)도 절대 사용하지 마세요.\n"
+    "2. 문단 맨 앞에 들여쓰기(공백/탭)를 넣지 마세요. 바로 글자를 시작해 주세요.\n\n"
+    "1. **네이버 블로그**:\n"
+    "- 모바일 화면으로 보았을 때 읽기 편하도록 적절한 줄바꿈과 띄어쓰기를 철저히 반영하여 작성\n"
+    "- 글의 최상단 시작 부분에 다정한 첫인사(예: '안녕하세요!' 등)를 반드시 포함\n"
+    "- 사람들의 이목을 사로잡는 매력적인 제목 작성\n"
+    "- 숫자 소제목(이모지 필수 포함 및 BOLD **소제목**)으로 내용 구조화\n"
+    "- 친근하고 다정한 말투 ('~했어요', '~거든요' 등)를 사용하고, 문장마다 어울리는 생동감 있는 이모지(😊, ✨, 💡, 💖 등)를 풍부하게 적절히 사용\n"
+    "- 본론 시작 직전에 구매 및 사용 꿀팁을 바로 배치하고, 요약 및 정리가 필요한 부분은 왼쪽 정렬 느낌의 불렛(•)으로 명확히 작성\n"
+    "- 모바일 가독성을 위해 과도하게 방대한 내용보다는 필요한 핵심 내용 위주로 구성 (전체 공백 제외 1,000자 이내)\n"
+    "- 경험 위주의 리얼하고 정보성 있는 내용 작성 (억지 경험 금지)\n"
+    "- 글 마지막에 깔끔한 요약 및 맺음말을 적고, 그 아래
