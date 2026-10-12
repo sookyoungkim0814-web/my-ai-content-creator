@@ -7,3 +7,4 @@ sqlalchemy
 pandas
 pypdf
 psycopg[binary]
+beautifulsoup4
