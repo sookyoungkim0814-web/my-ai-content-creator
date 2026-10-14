@@ -1,6 +1,8 @@
 import streamlit as st
 import google.generativeai as genai
 import re
+import os
+import tempfile
 from sqlalchemy import create_engine, text
 from pypdf import PdfReader
 
@@ -151,7 +153,7 @@ SYSTEM_PROMPT = (
     "[네이버 블로그]\n(원고 내용)\n\n"
     "[인스타그램 피드]\n(원고 내용)\n\n"
     "[인스타그램 캐러셀]\n(원고 내용)\n\n"
-    "[인스타그램 릴스/숏츠]\n(원고 내용)\n\n"
+    "[인스타그램 릴ส/숏츠]\n(원고 내용)\n\n"
     "[오늘의집 피드]\n(원고 내용)"
 )
 
@@ -186,27 +188,44 @@ with main_tab1:
                 st.warning("제품 이름과 주요 특징을 입력해주세요.")
             else:
                 with st.spinner("AI가 5개 플랫폼 원고를 생성 중입니다..."):
-                    model = genai.GenerativeModel("3.5 Flash-Lite")
-                    user_prompt = "- 제품/주제: {}\n- 주요 특징: {}\n- 추가 정보: {}".format(product_name, main_features, extra_info)
-                    
-                    contents = [SYSTEM_PROMPT, user_prompt]
-                    
-                    if uploaded_files:
-                        for file in uploaded_files:
-                            if file.type == "application/pdf":
-                                try:
-                                    pdf_reader = PdfReader(file)
-                                    extracted_text = ""
-                                    for page in pdf_reader.pages:
-                                        extracted_text += page.extract_text() or ""
-                                    contents.append("\n[첨부 PDF 문서 내용 ({})]:\n{}".format(file.name, extracted_text))
-                                except Exception as e:
-                                    st.warning(f"⚠️ {file.name} PDF 읽기 실패: {e}")
-                            else:
-                                contents.append({"mime_type": file.type, "data": file.read()})
-                    
-                    response = model.generate_content(contents)
-                    st.session_state.generated_contents = response.text.replace('\ufeff', '')
+                    try:
+                        model = genai.GenerativeModel("gemini-1.5-flash")
+                        user_prompt = "- 제품/주제: {}\n- 주요 특징: {}\n- 추가 정보: {}".format(product_name, main_features, extra_info)
+                        
+                        contents = [SYSTEM_PROMPT, user_prompt]
+                        uploaded_gemini_files = []
+                        
+                        if uploaded_files:
+                            for file in uploaded_files:
+                                if file.type == "application/pdf":
+                                    try:
+                                        pdf_reader = PdfReader(file)
+                                        extracted_text = ""
+                                        for page in pdf_reader.pages:
+                                            extracted_text += page.extract_text() or ""
+                                        contents.append("\n[첨부 PDF 문서 내용 ({})]:\n{}".format(file.name, extracted_text))
+                                    except Exception as e:
+                                        st.warning(f"⚠️ {file.name} PDF 읽기 실패: {e}")
+                                else:
+                                    # 이미지는 임시 파일로 저장 후 genai.upload_file 사용
+                                    try:
+                                        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.name)[1]) as tmp:
+                                            tmp.write(file.getvalue())
+                                            tmp_path = tmp.name
+                                        g_file = genai.upload_file(tmp_path, mime_type=file.type)
+                                        uploaded_gemini_files.append(g_file)
+                                        contents.append(g_file)
+                                        os.unlink(tmp_path)
+                                    except Exception as ex:
+                                        st.warning(f"⚠️ {file.name} 파일 업로드 처리 실패: {ex}")
+                        
+                        response = model.generate_content(contents)
+                        st.session_state.generated_contents = response.text.replace('\ufeff', '')
+                    except Exception as e:
+                        if "ResourceExhausted" in str(e) or "429" in str(e):
+                            st.error("⚠️ API 사용량 한도(Quota/Rate Limit)를 초과했습니다. 잠시 후 다시 시도해 주세요.")
+                        else:
+                            st.error(f"❌ 원고 생성 중 오류가 발생했습니다: {e}")
 
         if st.session_state.generated_contents:
             st.markdown("---")
@@ -218,11 +237,17 @@ with main_tab1:
                     st.warning("보완할 내용을 입력해주세요.")
                 else:
                     with st.spinner("피드백을 반영하여 다시 작성 중입니다..."):
-                        model = genai.GenerativeModel("3.5 Flash-Lite")
-                        refine_prompt = "이전 원고:\n{}\n\n피드백:\n{}\n\n위 피드백을 5개 플랫폼 모두에 반영해서 다시 작성해주세요.".format(st.session_state.generated_contents, feedback)
-                        response = model.generate_content([SYSTEM_PROMPT, refine_prompt])
-                        st.session_state.generated_contents = response.text.replace('\ufeff', '')
-                        st.rerun()
+                        try:
+                            model = genai.GenerativeModel("gemini-1.5-flash")
+                            refine_prompt = "이전 원고:\n{}\n\n피드백:\n{}\n\n위 피드백을 5개 플랫폼 모두에 반영해서 다시 작성해주세요.".format(st.session_state.generated_contents, feedback)
+                            response = model.generate_content([SYSTEM_PROMPT, refine_prompt])
+                            st.session_state.generated_contents = response.text.replace('\ufeff', '')
+                            st.rerun()
+                        except Exception as e:
+                            if "ResourceExhausted" in str(e) or "429" in str(e):
+                                st.error("⚠️ API 사용량 한도(Quota/Rate Limit)를 초과했습니다. 잠시 후 다시 시도해 주세요.")
+                            else:
+                                st.error(f"❌ 보완 생성 중 오류가 발생했습니다: {e}")
 
     with right_col:
         st.subheader("📄 생성된 원고 결과")
@@ -315,11 +340,4 @@ with main_tab2:
                 
                 if st.form_submit_button("🗑️ 선택 항목 삭제", use_container_width=True):
                     if not delete_ids:
-                        st.warning("삭제할 항목을 선택해주세요.")
-                    else:
-                        if delete_history_from_db(delete_ids):
-                            st.session_state.saved_history = load_history_from_db()
-                            st.success("선택한 원고가 DB에서 삭제되었습니다.")
-                            st.rerun()
-    except Exception as e:
-        st.error(f"히스토리를 불러오는 중 오류가 발생했습니다: {e}")
+                        st.warning("
