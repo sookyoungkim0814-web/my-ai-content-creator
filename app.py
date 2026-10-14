@@ -7,7 +7,7 @@ from sqlalchemy import create_engine, text
 from pypdf import PdfReader
 
 # ==========================================================
-# 0. DATABASE_URL 기반 Supabase PostgreSQL 연동
+# 0. DATABASE 설정 및 연동
 # ==========================================================
 DATABASE_URL = st.secrets.get("DATABASE_URL", "")
 
@@ -23,10 +23,7 @@ def get_db_engine():
         engine = create_engine(
             DATABASE_URL, 
             pool_pre_ping=True,
-            connect_args={
-                "sslmode": "require", 
-                "connect_timeout": 10
-            }
+            connect_args={"sslmode": "require", "connect_timeout": 10}
         )
         with engine.connect() as conn:
             conn.execute(text("CREATE TABLE IF NOT EXISTS history (id SERIAL PRIMARY KEY, content TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP);"))
@@ -34,7 +31,7 @@ def get_db_engine():
             conn.commit()
         return engine
     except Exception as e:
-        st.error(f"❌ DB 연결 실패: {e}")
+        st.error("❌ DB 연결 실패: {}".format(e))
         return None
 
 engine = get_db_engine()
@@ -47,7 +44,7 @@ def load_history_from_db():
             result = conn.execute(text("SELECT id, product_name, content FROM history ORDER BY id DESC;"))
             return [{"id": row[0], "product_name": row[1], "content": row[2]} for row in result.fetchall()]
     except Exception as e:
-        st.error(f"DB 데이터 불러오기 오류: {e}")
+        st.error("DB 데이터 불러오기 오류: {}".format(e))
         return []
 
 def save_history_to_db(product_name, content):
@@ -59,7 +56,7 @@ def save_history_to_db(product_name, content):
             conn.commit()
         return True
     except Exception as e:
-        st.error(f"DB 저장 오류: {e}")
+        st.error("DB 저장 오류: {}".format(e))
         return False
 
 def delete_history_from_db(item_ids):
@@ -71,7 +68,7 @@ def delete_history_from_db(item_ids):
             conn.commit()
         return True
     except Exception as e:
-        st.error(f"DB 삭제 오류: {e}")
+        st.error("DB 삭제 오류: {}".format(e))
         return False
 
 def clean_markdown_indent(text_data):
@@ -83,16 +80,13 @@ def clean_markdown_indent(text_data):
     return "\n".join(cleaned).strip()
 
 # ==========================================================
-# 1. 페이지 기본 설정
+# 1. 페이지 설정 및 초기화
 # ==========================================================
 st.set_page_config(page_title="멀티 플랫폼 AI 원고 생성기", layout="wide")
 
 st.title("📱 멀티 플랫폼 AI 원고 생성기")
 st.caption("하나의 정보로 네이버 블로그, 인스타 피드/캐러셀/릴스·숏츠, 오늘의집 피드 원고를 동시에 생성합니다.")
 
-# ----------------------------------------------------------
-# 🔑 API Key 불러오기
-# ----------------------------------------------------------
 secret_api_key = st.secrets.get("GEMINI_API_KEY", "")
 user_api_key = st.sidebar.text_input("Gemini API Key (Secrets 설정 시 빈칸)", type="password")
 final_api_key = user_api_key if user_api_key else secret_api_key
@@ -103,9 +97,6 @@ if final_api_key:
 else:
     st.sidebar.warning("⚠️ API Key를 확인해주세요.")
 
-# ----------------------------------------------------------
-# 세션 상태 초기화
-# ----------------------------------------------------------
 if "generated_contents" not in st.session_state:
     st.session_state.generated_contents = None
 if "saved_history" not in st.session_state:
@@ -122,7 +113,7 @@ def reset_inputs_only():
     st.session_state.file_uploader_key += 1
 
 # ==========================================================
-# 2. 프롬프트 시스템 설정 (구문 에러 방지형 결합)
+# 2. 프롬프트 정의
 # ==========================================================
 SYSTEM_PROMPT = (
     "당신은 SNS 콘텐츠 전문 마케팅 카피라이터입니다.\n"
@@ -158,14 +149,30 @@ SYSTEM_PROMPT = (
 )
 
 # ==========================================================
-# 3. 메인 탭 구성
+# 3. 메인 탭 레이아웃
 # ==========================================================
 main_tab1, main_tab2 = st.tabs(["✍️ 원고 생성 및 결과", "📚 저장된 원고 관리"])
 
-# ----------------------------------------------------------
-# [MAIN TAB 1] 원고 생성 및 결과
-# ----------------------------------------------------------
 with main_tab1:
     left_col, right_col = st.columns([1, 1], gap="large")
 
-    with left_
+    with left_col:
+        st.subheader("📝 정보 입력 및 관리")
+        
+        col_reset, _ = st.columns([4, 6])
+        with col_reset:
+            st.button("🔄 전체 초기화", on_click=reset_inputs_only, use_container_width=True)
+
+        uploaded_files = st.file_uploader("📷 참고 이미지 / 동영상 / PDF 문서 업로드 (선택)", type=["jpg", "jpeg", "png", "mp4", "mov", "pdf"], accept_multiple_files=True, key=f"file_uploader_{st.session_state.file_uploader_key}")
+
+        product_name = st.text_input("제품/장소/주제 이름", key="product_name", placeholder="예: 줄즈 에어2 휴대용 유모차")
+        main_features = st.text_area("주요 특징 및 장점 (줄바꿈 구분)", key="main_features", height=150, placeholder="예:\n- 한 손 한방 폴딩 및 기내 반입 가능\n- 매끄러운 핸들링과 서스펜션")
+        extra_info = st.text_area("추가 정보 (가격, 구매처 등)", key="extra_info", height=100, placeholder="예: 베이비하우스 내돈내산, 모바일 온누리 10% 할인")
+
+        if st.button("🚀 5개 플랫폼 원고 생성하기", type="primary", use_container_width=True):
+            if not final_api_key:
+                st.error("API Key를 확인해주세요.")
+            elif not product_name or not main_features:
+                st.warning("제품 이름과 주요 특징을 입력해주세요.")
+            else:
+                with st.spinner("AI가 5개
