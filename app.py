@@ -207,7 +207,6 @@ with main_tab1:
         with col_reset:
             st.button("🔄 전체 초기화", on_click=reset_inputs_only, use_container_width=True)
 
-        # PDF 형식(pdf) 추가
         uploaded_files = st.file_uploader(
             "📷 참고 이미지 / 동영상 / PDF 문서 업로드 (선택)", 
             type=["jpg", "jpeg", "png", "mp4", "mov", "pdf"], 
@@ -227,7 +226,6 @@ with main_tab1:
             else:
                 with st.spinner("AI가 5개 플랫폼 원고를 생성 중입니다..."):
                     try:
-                        # 안정적인 표준 모델명(gemini-1.5-flash) 사용
                         model = genai.GenerativeModel("gemini-1.5-flash")
                         user_prompt = f"- 제품/주제: {product_name}\n- 주요 특징: {main_features}\n- 추가 정보: {extra_info}"
                         
@@ -258,7 +256,6 @@ with main_tab1:
                         else:
                             st.error(f"❌ 원고 생성 중 오류가 발생했습니다: {e}")
 
-        # 보완 및 재생성 섹션
         if st.session_state.generated_contents:
             st.markdown("---")
             st.subheader("🔧 원고 보완 요청")
@@ -290,7 +287,7 @@ with main_tab1:
         
         if st.session_state.generated_contents:
             raw_text = st.session_state.generated_contents
-            platforms = ["네이버 블로그", "인스타그램 피드", "인스타그램 캐러셀", "인스타그램 릴스/숏츠", "오늘의집 피드"]
+            platforms = ["네이버 블로그", "인스타그램 피드", "인스타그램 캐러셀", "인스타그램 릴ส/숏츠", "오늘의집 피드"]
             parsed_contents = {}
             
             for i, platform in enumerate(platforms):
@@ -330,4 +327,49 @@ with main_tab1:
             with result_tabs[0]:
                 for idx, platform in enumerate(platforms):
                     st.markdown(f"## 📌 {platform}")
-                    st.
+                    st.markdown(parsed_contents[platform])
+                    if idx < len(platforms) - 1:
+                        st.markdown("---")
+            
+            for i, platform in enumerate(platforms):
+                with result_tabs[i+1]:
+                    st.caption(f"우측 상단의 복사 버튼(📋 아이콘)을 누르면 [{platform}] 원고가 변형 없이 복사됩니다.")
+                    st.code(parsed_contents[platform], language="markdown")
+
+        else:
+            st.info("👈 왼쪽 입력창에 정보를 입력하고 원고 생성 버튼을 누르면 이 영역에 결과가 나타납니다.")
+
+# ----------------------------------------------------------
+# [MAIN TAB 2] 저장된 원고 관리 (Supabase 기반)
+# ----------------------------------------------------------
+with main_tab2:
+    st.subheader("📚 저장된 히스토리 관리")
+    
+    if st.button("🔄 DB 목록 새로고침"):
+        st.session_state.saved_history = load_history_from_db()
+        st.rerun()
+
+    if not st.session_state.saved_history:
+        st.info("저장된 원고가 없습니다. '원고 생성 및 결과' 탭에서 원고를 만든 뒤 [💾 원고 저장하기] 버튼을 눌러보세요.")
+    else:
+        with st.form("history_delete_form"):
+            for item in st.session_state.saved_history:
+                item_id = item.get("id")
+                c_chk, c_exp = st.columns([1, 15])
+                with c_chk:
+                    st.checkbox("", key=f"history_chk_{item_id}")
+                with c_exp:
+                    with st.expander(f"[{item_id}] {item.get('product_name', '무제')}"):
+                        raw_history_content = item.get("content", "")
+                        cleaned_history_content = clean_markdown_indent(raw_history_content)
+                        st.markdown(cleaned_history_content)
+            
+            if st.form_submit_button("🗑️ 선택 항목 삭제", use_container_width=True):
+                delete_ids = [item.get("id") for item in st.session_state.saved_history if st.session_state.get(f"history_chk_{item.get('id')}", False)]
+                if not delete_ids:
+                    st.warning("삭제할 항목을 선택해주세요.")
+                else:
+                    if delete_history_from_db(delete_ids):
+                        st.session_state.saved_history = load_history_from_db()
+                        st.success("선택한 원고가 DB에서 삭제되었습니다.")
+                        st.rerun()
