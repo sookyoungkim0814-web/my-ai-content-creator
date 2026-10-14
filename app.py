@@ -191,4 +191,20 @@ with main_tab1:
                                         st.warning("⚠️ {} PDF 읽기 실패: {}".format(file.name, e))
                                 else:
                                     try:
-                                        with tempfile.NamedTemporaryFile(
+                                        file_suffix = os.path.splitext(file.name)[1]
+                                        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=file_suffix)
+                                        tmp.write(file.getvalue())
+                                        tmp.close()
+                                        tmp_path = tmp.name
+                                        
+                                        g_file = genai.upload_file(tmp_path, mime_type=file.type)
+                                        uploaded_gemini_files.append(g_file)
+                                        contents.append(g_file)
+                                        os.unlink(tmp_path)
+                                    except Exception as ex:
+                                        st.warning("⚠️ {} 파일 업로드 처리 실패: {}".format(file.name, ex))
+                        
+                        response = model.generate_content(contents)
+                        st.session_state.generated_contents = response.text.replace('\ufeff', '')
+                    except Exception as e:
+                        if "ResourceExhausted
