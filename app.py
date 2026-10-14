@@ -175,36 +175,3 @@ with main_tab1:
                     try:
                         model = genai.GenerativeModel("gemini-1.5-flash")
                         user_prompt = "- 제품/주제: {}\n- 주요 특징: {}\n- 추가 정보: {}".format(product_name, main_features, extra_info)
-                        contents = [SYSTEM_PROMPT, user_prompt]
-                        uploaded_gemini_files = []
-                        
-                        if uploaded_files:
-                            for file in uploaded_files:
-                                if file.type == "application/pdf":
-                                    try:
-                                        pdf_reader = PdfReader(file)
-                                        extracted_text = ""
-                                        for page in pdf_reader.pages:
-                                            extracted_text += page.extract_text() or ""
-                                        contents.append("\n[첨부 PDF 문서 내용 ({})]:\n{}".format(file.name, extracted_text))
-                                    except Exception as e:
-                                        st.warning("⚠️ {} PDF 읽기 실패: {}".format(file.name, e))
-                                else:
-                                    try:
-                                        file_suffix = os.path.splitext(file.name)[1]
-                                        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=file_suffix)
-                                        tmp.write(file.getvalue())
-                                        tmp.close()
-                                        tmp_path = tmp.name
-                                        
-                                        g_file = genai.upload_file(tmp_path, mime_type=file.type)
-                                        uploaded_gemini_files.append(g_file)
-                                        contents.append(g_file)
-                                        os.unlink(tmp_path)
-                                    except Exception as ex:
-                                        st.warning("⚠️ {} 파일 업로드 처리 실패: {}".format(file.name, ex))
-                        
-                        response = model.generate_content(contents)
-                        st.session_state.generated_contents = response.text.replace('\ufeff', '')
-                    except Exception as e:
-                        if "ResourceExhausted
