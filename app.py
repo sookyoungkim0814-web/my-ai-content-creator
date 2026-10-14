@@ -102,7 +102,7 @@ def clean_markdown_indent(text_data):
 st.set_page_config(page_title="멀티 플랫폼 AI 원고 생성기", layout="wide")
 
 st.title("📱 멀티 플랫폼 AI 원고 생성기")
-st.caption("하나의 정보로 네이버 블로그, 인스타 피드/캐러셀/릴스·숏츠, 오늘의집 피드 원고를 동시에 생성합니다.")
+st.caption("하나의 정보로 네이버 블로그, 인스타그램 피드, 인스타그램 릴스 원고를 동시에 생성합니다.")
 
 # ----------------------------------------------------------
 # 🔑 API Key 불러오기 (Secrets 1순위)
@@ -140,37 +140,31 @@ def reset_inputs_only():
 # ==========================================================
 SYSTEM_PROMPT = """
 당신은 SNS 콘텐츠 전문 마케팅 카피라이터입니다. 
-제공된 정보를 바탕으로 아래 5가지 플랫폼에 최적화된 원고를 일괄 작성해주세요.
+제공된 정보를 바탕으로 아래 3가지 플랫폼에 최적화된 원고를 일괄 작성해주세요.
 
 [💥 최우선 절대 지침]
 1. 각 플랫폼 원고 "내부"에는 어떠한 형태의 구분선(---, ***, ===, ___ 등)도 절대 사용하지 마세요. 
 2. 문단 맨 앞에 들여쓰기(공백/탭)를 넣지 마세요. 바로 글자를 시작해 주세요.
 
 1. **네이버 블로그**:
-    - 모바일 화면에서 읽기 편하게 줄바꿈과 띄어쓰기를 철저히 반영
-    - 글 최상단 시작 부분에 다정한 첫인사(예: 안녕하세요!)와 소개할 내용에 대한 간략한 요약 포함
-    - 이목을 사로잡는 매력적인 제목 작성
-    - 숫자 소제목(이모지 필수 포함 및 BOLD **소제목**)으로 내용 구조화
-    - 친근하고 다정한 말투(~했어요 등)와 어울리는 이모지(😊, ✨, 💡, 💖 등) 풍부하게 사용
-    - 본론 시작 직전에 구매 및 사용 꿀팁을 바로 배치하고, 요약/정리는 불렛(•)으로 작성
-    - 모바일 가독성을 위해 핵심 위주로 공백 제외 1,250~1,500자 이내로 간결하게 작성
-    - 경험 위주의 리얼한 정보성 내용 작성
-    - 글 마지막에 요약 및 맺음말을 적고, 그 아래에 다정한 인삿말(예: 오늘도 행복한 하루 보내세요! 💖)을 반드시 포함
+   - 모바일 화면 가독성을 극대화하기 위해 한 줄당 15~25자 내외로 짧게 끊어서 자주 줄바꿈(엔터)을 하고, 전체적인 문장이 모바일에서 가운데로 모이는 듯한 깔끔하고 감성적인 배열 느낌으로 작성
+   - 글 최상단 시작 부분에 다정한 첫인사(예: 안녕하세요!)와 소개할 내용에 대한 간략한 요약 포함
+   - 이목을 사로잡는 매력적인 제목 작성
+   - 숫자 소제목(이모지 필수 포함 및 BOLD **소제목**)으로 내용 구조화
+   - 친근하고 다정한 말투(~했어요 등)와 어울리는 이모지(😊, ✨, 💡, 💖 등) 풍부하게 사용
+   - 본론 시작 직전에 구매 및 사용 꿀팁을 바로 배치하고, 요약/정리는 불렛(•)으로 작성
+   - 모바일 가독성을 위해 핵심 위주로 공백 제외 1,250~1,500자 이내로 간결하게 작성
+   - 경험 위주의 리얼한 정보성 내용 작성
+   - 글 마지막에 요약 및 맺음말을 적고, 그 아래에 다정한 인삿말(예: 오늘도 행복한 하루 보내세요! 💖)을 반드시 포함
 
 2. **인스타그램 피드**:
    - 가독성 높은 감성적/소통형 캡션, 불렛 등 이모지를 통한 줄바꿈 활용, 적절한 이모지
    - 하단에 관련 인기 태그(#) 15~20개 포함
 
-3. **인스타그램 캐러셀**:
-   - 슬라이드별(5장~10장) 구성안 제공 (슬라이드 1: 타이틀 / 2~9: 장점 요약 / 마지막: CTA)
+3. **인스타그램 릴스**:
+   - 15~30초 숏폼 영상 대본 형식으로 [시각 자료 / 자막 / 나레이션] 구조를 명확히 포함하여 상세하게 작성
 
-4. **인스타그램 릴스/숏츠**:
-   - 15~30초 숏폼 영상 대본 ([시각 자료 / 자막 / 나레이션])
-
-5. **오늘의집 피드**:
-   - 감성적인 리빙/육아 라이프스타일 톤앤매너, 공간/스타일/사용성 위주, 브랜드 및 해시태그 포함
-
-응답은 반드시 아래 5개 구분 태그를 정확히 사용하여 출력하세요:
+응답은 반드시 아래 3개 구분 태그를 정확히 사용하여 출력하세요:
 
 [네이버 블로그]
 (원고 내용)
@@ -178,13 +172,7 @@ SYSTEM_PROMPT = """
 [인스타그램 피드]
 (원고 내용)
 
-[인스타그램 캐러셀]
-(원고 내용)
-
-[인스타그램 릴스/숏츠]
-(원고 내용)
-
-[오늘의집 피드]
+[인스타그램 릴스]
 (원고 내용)
 """
 
@@ -218,15 +206,15 @@ with main_tab1:
         main_features = st.text_area("주요 특징 및 장점 (줄바꿈 구분)", key="main_features", height=150, placeholder="예:\n- 한 손 한방 폴딩 및 기내 반입 가능\n- 매끄러운 핸들링과 서스펜션")
         extra_info = st.text_area("추가 정보 (가격, 구매처 등)", key="extra_info", height=100, placeholder="예: 베이비하우스 내돈내산, 모바일 온누리 10% 할인")
 
-        if st.button("🚀 5개 플랫폼 원고 생성하기", type="primary", use_container_width=True):
+        if st.button("🚀 3개 플랫폼 원고 생성하기", type="primary", use_container_width=True):
             if not final_api_key:
                 st.error("API Key를 확인해주세요.")
             elif not product_name or not main_features:
                 st.warning("제품 이름과 주요 특징을 입력해주세요.")
             else:
-                with st.spinner("AI가 5개 플랫폼 원고를 생성 중입니다..."):
+                with st.spinner("AI가 3개 플랫폼 원고를 생성 중입니다..."):
                     try:
-                        model = genai.GenerativeModel("gemini-3.8-flash")
+                        model = genai.GenerativeModel("gemini-1.5-flash")
                         user_prompt = f"- 제품/주제: {product_name}\n- 주요 특징: {main_features}\n- 추가 정보: {extra_info}"
                         
                         contents = [SYSTEM_PROMPT, user_prompt]
@@ -267,8 +255,8 @@ with main_tab1:
                 else:
                     with st.spinner("피드백을 반영하여 다시 작성 중입니다..."):
                         try:
-                            model = genai.GenerativeModel("gemini-3.8-flash")
-                            refine_prompt = f"이전 원고:\n{st.session_state.generated_contents}\n\n피드백:\n{feedback}\n\n위 피드백 5개 플랫폼 모두에 반영해서 다시 작성해주세요."
+                            model = genai.GenerativeModel("gemini-1.5-flash")
+                            refine_prompt = f"이전 원고:\n{st.session_state.generated_contents}\n\n피드백:\n{feedback}\n\n위 피드백 3개 플랫폼 모두에 반영해서 다시 작성해주세요."
                             response = model.generate_content([SYSTEM_PROMPT, refine_prompt])
                             st.session_state.generated_contents = response.text
                             st.rerun()
@@ -287,7 +275,7 @@ with main_tab1:
         
         if st.session_state.generated_contents:
             raw_text = st.session_state.generated_contents
-            platforms = ["네이버 블로그", "인스타그램 피드", "인스타그램 캐러셀", "인스타그램 릴ส/숏츠", "오늘의집 피드"]
+            platforms = ["네이버 블로그", "인스타그램 피드", "인스타그램 릴스"]
             parsed_contents = {}
             
             for i, platform in enumerate(platforms):
