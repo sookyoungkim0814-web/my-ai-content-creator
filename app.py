@@ -161,4 +161,93 @@ with main_tab1:
 
         uploaded_files = st.file_uploader("📷 참고 이미지 / 동영상 / PDF 문서 업로드 (선택)", type=["jpg", "jpeg", "png", "mp4", "mov", "pdf"], accept_multiple_files=True, key=f"file_uploader_{st.session_state.file_uploader_key}")
 
-        product
+        product_name = st.text_input("제품/장소/주제 이름", key="product_name", placeholder="예: 줄즈 에어2 휴대용 유모차")
+        main_features = st.text_area("주요 특징 및 장점 (줄바꿈 구분)", key="main_features", height=150, placeholder="예:\n- 한 손 한방 폴딩 및 기내 반입 가능\n- 매끄러운 핸들링과 서스펜션")
+        extra_info = st.text_area("추가 정보 (가격, 구매처 등)", key="extra_info", height=100, placeholder="예: 베이비하우스 내돈내산, 모바일 온누리 10% 할인")
+
+        if st.button("🚀 5개 플랫폼 원고 생성하기", type="primary", use_container_width=True):
+            if not final_api_key:
+                st.error("API Key를 확인해주세요.")
+            elif not product_name or not main_features:
+                st.warning("제품 이름과 주요 특징을 입력해주세요.")
+            else:
+                with st.spinner("AI가 5개 플랫폼 원고를 생성 중입니다..."):
+                    try:
+                        model = genai.GenerativeModel("gemini-1.5-flash")
+                        user_prompt = "- 제품/주제: {}\n- 주요 특징: {}\n- 추가 정보: {}".format(product_name, main_features, extra_info)
+                        contents = [SYSTEM_PROMPT, user_prompt]
+                        uploaded_gemini_files = []
+                        
+                        if uploaded_files:
+                            for file in uploaded_files:
+                                if file.type == "application/pdf":
+                                    try:
+                                        pdf_reader = PdfReader(file)
+                                        extracted_text = ""
+                                        for page in pdf_reader.pages:
+                                            extracted_text += page.extract_text() or ""
+                                        contents.append("\n[첨부 PDF 문서 내용 ({})]:\n{}".format(file.name, extracted_text))
+                                    except Exception as e:
+                                        st.warning("⚠️ {} PDF 읽기 실패: {}".format(file.name, e))
+                                else:
+                                    try:
+                                        with tempfile.NamedTemporaryFile(delete=False, suffix=os.path.splitext(file.name)[1]) as tmp:
+                                            tmp.write(file.getvalue())
+                                            tmp_path = tmp.name
+                                        g_file = genai.upload_file(tmp_path, mime_type=file.type)
+                                        uploaded_gemini_files.append(g_file)
+                                        contents.append(g_file)
+                                        os.unlink(tmp_path)
+                                    except Exception as ex:
+                                        st.warning("⚠️ {} 파일 업로드 처리 실패: {}".format(file.name, ex))
+                        
+                        response = model.generate_content(contents)
+                        st.session_state.generated_contents = response.text.replace('\ufeff', '')
+                    except Exception as e:
+                        if "ResourceExhausted" in str(e) or "429" in str(e):
+                            st.error("⚠️ API 사용량 한도(Quota/Rate Limit)를 초과했습니다. 잠시 후 다시 시도해 주세요.")
+                        else:
+                            st.error("❌ 원고 생성 중 오류가 발생했습니다: {}".format(e))
+
+        if st.session_state.generated_contents:
+            st.markdown("---")
+            st.subheader("🔧 원고 보완 요청")
+            feedback = st.text_area("수정하고 싶은 내용을 입력하세요", key="feedback_text", placeholder="예: 블로그 원고에 사진 가이드를 더 추가해줘.")
+            
+            if st.button("🔄 보완점 반영 재생성", use_container_width=True):
+                if not feedback:
+                    st.warning("보완할 내용을 입력해주세요.")
+                else:
+                    with st.spinner("피드백을 반영하여 다시 작성 중입니다..."):
+                        try:
+                            model = genai.GenerativeModel("gemini-1.5-flash")
+                            refine_prompt = "이전 원고:\n{}\n\n피드백:\n{}\n\n위 피드백을 5개 플랫폼 모두에 반영해서 다시 작성해주세요.".format(st.session_state.generated_contents, feedback)
+                            response = model.generate_content([SYSTEM_PROMPT, refine_prompt])
+                            st.session_state.generated_contents = response.text.replace('\ufeff', '')
+                            st.rerun()
+                        except Exception as e:
+                            if "ResourceExhausted" in str(e) or "429" in str(e):
+                                st.error("⚠️ API 사용량 한도(Quota/Rate Limit)를 초과했습니다. 잠시 후 다시 시도해 주세요.")
+                            else:
+                                st.error("❌ 보완 생성 중 오류가 발생했습니다: {}".format(e))
+
+    with right_col:
+        st.subheader("📄 생성된 원고 결과")
+        
+        if st.session_state.generated_contents:
+            raw_text = st.session_state.generated_contents
+            platforms = ["네이버 블로그", "인스타그램 피드", "인스타그램 캐러셀", "인스타그램 릴스/숏츠", "오늘의집 피드"]
+            parsed_contents = {}
+            
+            for i, platform in enumerate(platforms):
+                if i < len(platforms) - 1:
+                    next_platforms = platforms[i+1:]
+                    next_pattern = "|".join([rf"\[{re.escape(p)}\]" for p in next_platforms])
+                    pattern = rf"\[{re.escape(platform)}\]\s*(.*?)(?={next_pattern}|\Z)"
+                else:
+                    pattern = rf"\[{re.escape(platform)}\]\s*(.*)"
+                
+                match = re.search(pattern, raw_text, re.DOTALL)
+                
+                if match:
+                    content = match.group(1).replace('\ufeff',
