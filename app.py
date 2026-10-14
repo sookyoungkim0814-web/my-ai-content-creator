@@ -185,4 +185,10 @@ with main_tab1:
                                         pdf_reader = PdfReader(file)
                                         extracted_text = ""
                                         for page in pdf_reader.pages:
-                                            extracted_text += page.extract_text
+                                            extracted_text += page.extract_text() or ""
+                                        contents.append("\n[첨부 PDF 문서 내용 ({})]:\n{}".format(file.name, extracted_text))
+                                    except Exception as e:
+                                        st.warning("⚠️ {} PDF 읽기 실패: {}".format(file.name, e))
+                                else:
+                                    try:
+                                        with tempfile.NamedTemporaryFile(
