@@ -175,3 +175,157 @@ with main_tab1:
                     try:
                         model = genai.GenerativeModel("gemini-1.5-flash")
                         user_prompt = "- 제품/주제: {}\n- 주요 특징: {}\n- 추가 정보: {}".format(product_name, main_features, extra_info)
+                        contents = [SYSTEM_PROMPT, user_prompt]
+                        
+                        if uploaded_files:
+                            for file in uploaded_files:
+                                if file.type == "application/pdf":
+                                    try:
+                                        pdf_reader = PdfReader(file)
+                                        extracted_text = ""
+                                        for page in pdf_reader.pages:
+                                            extracted_text += page.extract_text() or ""
+                                        contents.append("\n[첨부 PDF 문서 내용 ({})]:\n{}".format(file.name, extracted_text))
+                                    except Exception as pdf_err:
+                                        st.warning("⚠️ {} PDF 읽기 실패: {}".format(file.name, pdf_err))
+                                else:
+                                    try:
+                                        file_suffix = os.path.splitext(file.name)[1]
+                                        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=file_suffix)
+                                        tmp.write(file.getvalue())
+                                        tmp.close()
+                                        
+                                        g_file = genai.upload_file(tmp.name, mime_type=file.type)
+                                        contents.append(g_file)
+                                        os.unlink(tmp.name)
+                                    except Exception as img_err:
+                                        st.warning("⚠️ {} 파일 업로드 실패: {}".format(file.name, img_err))
+                        
+                        response = model.generate_content(contents)
+                        st.session_state.generated_contents = response.text.replace('\ufeff', '')
+                    except Exception as api_err:
+                        err_str = str(api_err)
+                        if "ResourceExhausted" in err_str or "429" in err_str:
+                            st.error("⚠️ API 사용량 한도(Quota/Rate Limit)를 초과했습니다. 잠시 후 다시 시도해 주세요.")
+                        else:
+                            st.error("❌ 원고 생성 중 오류가 발생했습니다: {}".format(api_err))
+
+        if st.session_state.generated_contents:
+            st.markdown("---")
+            st.subheader("🔧 원고 보완 요청")
+            feedback = st.text_area("수정하고 싶은 내용을 입력하세요", key="feedback_text", placeholder="예: 블로그 원고에 사진 가이드를 더 추가해줘.")
+            
+            if st.button("🔄 보완점 반영 재생성", use_container_width=True):
+                if not feedback:
+                    st.warning("보완할 내용을 입력해주세요.")
+                else:
+                    with st.spinner("피드백을 반영하여 다시 작성 중입니다..."):
+                        try:
+                            model = genai.GenerativeModel("gemini-1.5-flash")
+                            refine_prompt = "이전 원고:\n{}\n\n피드백:\n{}\n\n위 피드백을 5개 플랫폼 모두에 반영해서 다시 작성해주세요.".format(st.session_state.generated_contents, feedback)
+                            response = model.generate_content([SYSTEM_PROMPT, refine_prompt])
+                            st.session_state.generated_contents = response.text.replace('\ufeff', '')
+                            st.rerun()
+                        except Exception as api_err:
+                            err_str = str(api_err)
+                            if "ResourceExhausted" in err_str or "429" in err_str:
+                                st.error("⚠️ API 사용량 한도(Quota/Rate Limit)를 초과했습니다. 잠시 후 다시 시도해 주세요.")
+                            else:
+                                st.error("❌ 보완 생성 중 오류가 발생했습니다: {}".format(api_err))
+
+    with right_col:
+        st.subheader("📄 생성된 원고 결과")
+        
+        if st.session_state.generated_contents:
+            raw_text = st.session_state.generated_contents
+            platforms = ["네이버 블로그", "인스타그램 피드", "인스타그램 캐러셀", "인스타그램 릴스/숏츠", "오늘의집 피드"]
+            parsed_contents = {}
+            
+            for i, platform in enumerate(platforms):
+                if i < len(platforms) - 1:
+                    next_platforms = platforms[i+1:]
+                    next_pattern = "|".join([rf"\[{re.escape(p)}\]" for p in next_platforms])
+                    pattern = rf"\[{re.escape(platform)}\]\s*(.*?)(?={next_pattern}|\Z)"
+                else:
+                    pattern = rf"\[{re.escape(platform)}\]\s*(.*)"
+                
+                match = re.search(pattern, raw_text, re.DOTALL)
+                
+                if match:
+                    content = match.group(1).replace('\ufeff', '').strip()
+                    content = re.sub(r'^[ \t]*[-*_]{3,}[ \t]*$', '', content, flags=re.MULTILINE)
+                    content = clean_markdown_indent(content)
+                    parsed_contents[platform] = content
+                else:
+                    parsed_contents[platform] = "생성된 내용이 없습니다."
+
+            clean_full_content = ""
+            for idx, platform in enumerate(platforms):
+                clean_full_content += "[{}]\n{}\n".format(platform, parsed_contents[platform])
+                if idx < len(platforms) - 1:
+                    clean_full_content += "\n----------------------------------------\n\n"
+
+            if st.button("💾 원고 저장하기", use_container_width=True):
+                p_name = product_name if product_name else "무제"
+                if save_history_to_db(p_name, clean_full_content):
+                    st.session_state.saved_history = load_history_from_db()
+                    st.success("Supabase PostgreSQL DB에 안전하게 저장되었습니다!")
+
+            st.markdown("---")
+
+            result_tabs = st.tabs(["📋 전체 원고"] + ["📌 {}".format(p) for p in platforms])
+            
+            with result_tabs[0]:
+                for idx, platform in enumerate(platforms):
+                    st.markdown("## 📌 {}".format(platform))
+                    st.markdown(parsed_contents[platform])
+                    if idx < len(platforms) - 1:
+                        st.markdown("---")
+                
+            for i, platform in enumerate(platforms):
+                with result_tabs[i+1]:
+                    st.caption("우측 상단의 복사 버튼(📋 아이콘)을 누르면 [{}] 원고가 줄바꿈 및 띄어쓰기 손실 없이 복사됩니다.".format(platform))
+                    st.code(parsed_contents[platform], language="markdown")
+
+        else:
+            st.info("👈 왼쪽 입력창에 정보를 입력하고 원고 생성 버튼을 누르면 이 영역에 결과가 나타납니다.")
+
+with main_tab2:
+    st.subheader("📚 저장된 히스토리 관리")
+    
+    col_refresh, _ = st.columns([2, 8])
+    with col_refresh:
+        if st.button("🔄 DB 목록 새로고침"):
+            st.session_state.saved_history = load_history_from_db()
+            st.rerun()
+
+    try:
+        current_history = load_history_from_db()
+        if not current_history:
+            st.info("저장된 원고가 없습니다. '원고 생성 및 결과' 탭에서 원고를 만든 뒤 [💾 원고 저장하기] 버튼을 눌러보세요.")
+        else:
+            with st.form("history_delete_form"):
+                delete_ids = []
+                for item in current_history:
+                    item_id = item.get("id")
+                    p_title = item.get("product_name", "무제")
+                    c_chk, c_exp = st.columns([1, 15])
+                    with c_chk:
+                        if st.checkbox("", key="history_chk_{}".format(item_id)):
+                            delete_ids.append(item_id)
+                    with c_exp:
+                        with st.expander("[{}] {}".format(item_id, p_title)):
+                            raw_history_content = item.get("content", "").replace('\ufeff', '')
+                            cleaned_history_content = clean_markdown_indent(raw_history_content)
+                            st.markdown(cleaned_history_content)
+                
+                if st.form_submit_button("🗑️ 선택 항목 삭제", use_container_width=True):
+                    if not delete_ids:
+                        st.warning("삭제할 항목을 선택해주세요.")
+                    else:
+                        if delete_history_from_db(delete_ids):
+                            st.session_state.saved_history = load_history_from_db()
+                            st.success("선택한 원고가 DB에서 삭제되었습니다.")
+                            st.rerun()
+    except Exception as e:
+        st.error("히스토리를 불러오는 중 오류가 발생했습니다: {}".format(e))
