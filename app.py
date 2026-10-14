@@ -186,7 +186,7 @@ with main_tab1:
                 st.warning("제품 이름과 주요 특징을 입력해주세요.")
             else:
                 with st.spinner("AI가 5개 플랫폼 원고를 생성 중입니다..."):
-                    model = genai.GenerativeModel("gemini-3.6-flash")
+                    model = genai.GenerativeModel("3.5 Flash-Lite")
                     user_prompt = "- 제품/주제: {}\n- 주요 특징: {}\n- 추가 정보: {}".format(product_name, main_features, extra_info)
                     
                     contents = [SYSTEM_PROMPT, user_prompt]
@@ -218,7 +218,7 @@ with main_tab1:
                     st.warning("보완할 내용을 입력해주세요.")
                 else:
                     with st.spinner("피드백을 반영하여 다시 작성 중입니다..."):
-                        model = genai.GenerativeModel("gemini-3.6-flash")
+                        model = genai.GenerativeModel("3.5 Flash-Lite")
                         refine_prompt = "이전 원고:\n{}\n\n피드백:\n{}\n\n위 피드백을 5개 플랫폼 모두에 반영해서 다시 작성해주세요.".format(st.session_state.generated_contents, feedback)
                         response = model.generate_content([SYSTEM_PROMPT, refine_prompt])
                         st.session_state.generated_contents = response.text.replace('\ufeff', '')
