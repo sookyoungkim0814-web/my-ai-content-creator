@@ -147,15 +147,15 @@ SYSTEM_PROMPT = """
 2. 문단 맨 앞에 들여쓰기(공백/탭)를 넣지 마세요. 바로 글자를 시작해 주세요.
 
 1. **네이버 블로그**:
-   - 친근하고 정성스러운 실제 사용 후기 어조 ('~했어요', '~입니다', 이모지 적절히 활용)
-   - 이목을 끌 수 있는 원고 제목 작성
-   - 숫자 소제목(이모지 활용 및 BOLD **소제목**)으로 구조화 
-   - 각 내용 중 추천 사진 가이드 작성 (예: 📷 [추천 사진: 한 손으로 폴딩하는 컷])
-   - 검색 노출 및 가독성을 높이기 위한 정돈된 문단 구성하고 줄글 내용이 길어질 경우 불렛을 이용해서 내용 요약
-   - 경험 위주의 정보성 내용 작성 (단순 제품 소개 시 경험 억지 작성 금지)
-   - 공백 제외 글자수 1,200자~2,000자 분량
-   - 구매 꿀팁을 머릿말 이후 바로 배치 
-   - 글 마지막에 결론/요약 작성
+    - 모바일 화면에서 읽기 편하게 줄바꿈과 띄어쓰기를 철저히 반영
+    - 글 최상단 시작 부분에 다정한 첫인사(예: 안녕하세요!)와 소개할 내용에 대한 간략한 요약 포함
+    - 이목을 사로잡는 매력적인 제목 작성
+    - 숫자 소제목(이모지 필수 포함 및 BOLD **소제목**)으로 내용 구조화
+    - 친근하고 다정한 말투(~했어요 등)와 어울리는 이모지(😊, ✨, 💡, 💖 등) 풍부하게 사용
+    - 본론 시작 직전에 구매 및 사용 꿀팁을 바로 배치하고, 요약/정리는 불렛(•)으로 작성
+    - 모바일 가독성을 위해 핵심 위주로 공백 제외 1,250~1,500자 이내로 간결하게 작성
+    - 경험 위주의 리얼한 정보성 내용 작성
+    - 글 마지막에 요약 및 맺음말을 적고, 그 아래에 다정한 인삿말(예: 오늘도 행복한 하루 보내세요! 💖)을 반드시 포함
 
 2. **인스타그램 피드**:
    - 가독성 높은 감성적/소통형 캡션, 불렛 등 이모지를 통한 줄바꿈 활용, 적절한 이모지
@@ -164,7 +164,7 @@ SYSTEM_PROMPT = """
 3. **인스타그램 캐러셀**:
    - 슬라이드별(5장~10장) 구성안 제공 (슬라이드 1: 타이틀 / 2~9: 장점 요약 / 마지막: CTA)
 
-4. **인스타그램 릴ส/숏츠**:
+4. **인스타그램 릴스/숏츠**:
    - 15~30초 숏폼 영상 대본 ([시각 자료 / 자막 / 나레이션])
 
 5. **오늘의집 피드**:
@@ -227,15 +227,14 @@ with main_tab1:
             else:
                 with st.spinner("AI가 5개 플랫폼 원고를 생성 중입니다..."):
                     try:
-                        # 지원되는 표준 모델명으로 교체 (gemini-3.8-flash)[cite: 1]
-                        model = genai.GenerativeModel("gemini-3.8-flash")
+                        # 안정적인 표준 모델명(gemini-1.5-flash) 사용
+                        model = genai.GenerativeModel("gemini-1.5-flash")
                         user_prompt = f"- 제품/주제: {product_name}\n- 주요 특징: {main_features}\n- 추가 정보: {extra_info}"
                         
                         contents = [SYSTEM_PROMPT, user_prompt]
                         
                         if uploaded_files:
                             for file in uploaded_files:
-                                # PDF 파일인 경우 텍스트 추출 후 프롬프트에 병합
                                 if file.type == "application/pdf":
                                     try:
                                         pdf_reader = PdfReader(file)
@@ -246,7 +245,6 @@ with main_tab1:
                                     except Exception as e:
                                         st.warning(f"⚠️ {file.name} PDF 읽기 실패: {e}")
                                 else:
-                                    # 이미지/동영상 바이너리 전달
                                     contents.append({"mime_type": file.type, "data": file.read()})
                         
                         response = model.generate_content(contents)
@@ -272,7 +270,7 @@ with main_tab1:
                 else:
                     with st.spinner("피드백을 반영하여 다시 작성 중입니다..."):
                         try:
-                            model = genai.GenerativeModel("gemini-3.8-flash")
+                            model = genai.GenerativeModel("gemini-1.5-flash")
                             refine_prompt = f"이전 원고:\n{st.session_state.generated_contents}\n\n피드백:\n{feedback}\n\n위 피드백 5개 플랫폼 모두에 반영해서 다시 작성해주세요."
                             response = model.generate_content([SYSTEM_PROMPT, refine_prompt])
                             st.session_state.generated_contents = response.text
@@ -291,7 +289,6 @@ with main_tab1:
         st.subheader("📄 생성된 원고 결과")
         
         if st.session_state.generated_contents:
-            # 플랫폼별 텍스트 파싱 및 내부분선/들여쓰기 정제
             raw_text = st.session_state.generated_contents
             platforms = ["네이버 블로그", "인스타그램 피드", "인스타그램 캐러셀", "인스타그램 릴스/숏츠", "오늘의집 피드"]
             parsed_contents = {}
@@ -308,15 +305,12 @@ with main_tab1:
                 
                 if match:
                     content = match.group(1).strip()
-                    # 1. 내부 구분선(--- 등) 제거
                     content = re.sub(r'^[ \t]*[-*_]{3,}[ \t]*$', '', content, flags=re.MULTILINE)
-                    # 2. 코드 블록 생성 방지를 위해 각 줄 맨 앞 공백 제거
                     content = clean_markdown_indent(content)
                     parsed_contents[platform] = content.strip()
                 else:
                     parsed_contents[platform] = "생성된 내용이 없습니다."
 
-            # DB 저장용 데이터 구성
             clean_full_content = ""
             for idx, platform in enumerate(platforms):
                 clean_full_content += f"[{platform}]\n{parsed_contents[platform]}\n"
@@ -331,59 +325,9 @@ with main_tab1:
 
             st.markdown("---")
 
-            # 결과 탭 구성
             result_tabs = st.tabs(["📋 전체 원고"] + [f"📌 {p}" for p in platforms])
             
-            # 1) 전체 원고 탭 (복사 상자 없이 순수 일반 텍스트 출력)
             with result_tabs[0]:
                 for idx, platform in enumerate(platforms):
                     st.markdown(f"## 📌 {platform}")
-                    st.markdown(parsed_contents[platform])
-                    if idx < len(platforms) - 1:
-                        st.markdown("---")
-                
-            # 2) 각 플랫폼별 탭 (개별 복사용 코드블록)
-            for i, platform in enumerate(platforms):
-                with result_tabs[i+1]:
-                    st.caption(f"우측 상단의 복사 버튼(📋 아이콘)을 누르면 [{platform}] 원고가 변형 없이 복사됩니다.")
-                    st.code(parsed_contents[platform], language="markdown")
-
-        else:
-            st.info("👈 왼쪽 입력창에 정보를 입력하고 원고 생성 버튼을 누르면 이 영역에 결과가 나타납니다.")
-
-# ----------------------------------------------------------
-# [MAIN TAB 2] 저장된 원고 관리 (Supabase 기반)
-# ----------------------------------------------------------
-with main_tab2:
-    st.subheader("📚 저장된 히스토리 관리")
-    
-    if st.button("🔄 DB 목록 새로고침"):
-        st.session_state.saved_history = load_history_from_db()
-        st.rerun()
-
-    if not st.session_state.saved_history:
-        st.info("저장된 원고가 없습니다. '원고 생성 및 결과' 탭에서 원고를 만든 뒤 [💾 원고 저장하기] 버튼을 눌러보세요.")
-    else:
-        with st.form("history_delete_form"):
-            delete_ids = []
-            for item in st.session_state.saved_history:
-                item_id = item.get("id")
-                c_chk, c_exp = st.columns([1, 15])
-                with c_chk:
-                    if st.checkbox("", key=f"history_chk_{item_id}"):
-                        delete_ids.append(item_id)
-                with c_exp:
-                    with st.expander(f"[{item_id}] {item.get('product_name', '무제')}"):
-                        # 저장된 원고 읽어올 때 들여쓰기 공백 제거 후 일반 마크다운(st.markdown)으로 표시
-                        raw_history_content = item.get("content", "")
-                        cleaned_history_content = clean_markdown_indent(raw_history_content)
-                        st.markdown(cleaned_history_content)
-            
-            if st.form_submit_button("🗑️ 선택 항목 삭제", use_container_width=True):
-                if not delete_ids:
-                    st.warning("삭제할 항목을 선택해주세요.")
-                else:
-                    if delete_history_from_db(delete_ids):
-                        st.session_state.saved_history = load_history_from_db()
-                        st.success("선택한 원고가 DB에서 삭제되었습니다.")
-                        st.rerun()
+                    st.
