@@ -173,7 +173,8 @@ with main_tab1:
             else:
                 with st.spinner("AI가 5개 플랫폼 원고를 생성 중입니다..."):
                     try:
-                        model = genai.GenerativeModel("gemini-1.5-flash")
+                        # 최신 표준 모델명으로 변경 (gemini-2.5-flash 또는 안정적인 기본 플래시 모델)
+                        model = genai.GenerativeModel("gemini-2.5-flash")
                         user_prompt = "- 제품/주제: {}\n- 주요 특징: {}\n- 추가 정보: {}".format(product_name, main_features, extra_info)
                         contents = [SYSTEM_PROMPT, user_prompt]
                         
@@ -205,7 +206,9 @@ with main_tab1:
                         st.session_state.generated_contents = response.text.replace('\ufeff', '')
                     except Exception as api_err:
                         err_str = str(api_err)
-                        if "ResourceExhausted" in err_str or "429" in err_str:
+                        if "API_KEY_INVALID" in err_str or "API key not valid" in err_str:
+                            st.error("❌ 유효하지 않은 Gemini API Key입니다. 올바른 키를 입력했는지 확인해 주세요.")
+                        elif "ResourceExhausted" in err_str or "429" in err_str:
                             st.error("⚠️ API 사용량 한도(Quota/Rate Limit)를 초과했습니다. 잠시 후 다시 시도해 주세요.")
                         else:
                             st.error("❌ 원고 생성 중 오류가 발생했습니다: {}".format(api_err))
@@ -221,14 +224,16 @@ with main_tab1:
                 else:
                     with st.spinner("피드백을 반영하여 다시 작성 중입니다..."):
                         try:
-                            model = genai.GenerativeModel("gemini-1.5-flash")
+                            model = genai.GenerativeModel("gemini-2.5-flash")
                             refine_prompt = "이전 원고:\n{}\n\n피드백:\n{}\n\n위 피드백을 5개 플랫폼 모두에 반영해서 다시 작성해주세요.".format(st.session_state.generated_contents, feedback)
                             response = model.generate_content([SYSTEM_PROMPT, refine_prompt])
                             st.session_state.generated_contents = response.text.replace('\ufeff', '')
                             st.rerun()
                         except Exception as api_err:
                             err_str = str(api_err)
-                            if "ResourceExhausted" in err_str or "429" in err_str:
+                            if "API_KEY_INVALID" in err_str or "API key not valid" in err_str:
+                                st.error("❌ 유효하지 않은 Gemini API Key입니다. 올바른 키를 입력했는지 확인해 주세요.")
+                            elif "ResourceExhausted" in err_str or "429" in err_str:
                                 st.error("⚠️ API 사용량 한도(Quota/Rate Limit)를 초과했습니다. 잠시 후 다시 시도해 주세요.")
                             else:
                                 st.error("❌ 보완 생성 중 오류가 발생했습니다: {}".format(api_err))
