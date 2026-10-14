@@ -250,4 +250,60 @@ with main_tab1:
                 match = re.search(pattern, raw_text, re.DOTALL)
                 
                 if match:
-                    content = match.group(1).replace('\ufeff',
+                    content = match.group(1).replace('\ufeff', '').strip()
+                    content = re.sub(r'^[ \t]*[-*_]{3,}[ \t]*$', '', content, flags=re.MULTILINE)
+                    content = clean_markdown_indent(content)
+                    parsed_contents[platform] = content
+                else:
+                    parsed_contents[platform] = "생성된 내용이 없습니다."
+
+            clean_full_content = ""
+            for idx, platform in enumerate(platforms):
+                clean_full_content += "[{}]\n{}\n".format(platform, parsed_contents[platform])
+                if idx < len(platforms) - 1:
+                    clean_full_content += "\n----------------------------------------\n\n"
+
+            if st.button("💾 원고 저장하기", use_container_width=True):
+                p_name = product_name if product_name else "무제"
+                if save_history_to_db(p_name, clean_full_content):
+                    st.session_state.saved_history = load_history_from_db()
+                    st.success("Supabase PostgreSQL DB에 안전하게 저장되었습니다!")
+
+            st.markdown("---")
+
+            result_tabs = st.tabs(["📋 전체 원고"] + ["📌 {}".format(p) for p in platforms])
+            
+            with result_tabs[0]:
+                for idx, platform in enumerate(platforms):
+                    st.markdown("## 📌 {}".format(platform))
+                    st.markdown(parsed_contents[platform])
+                    if idx < len(platforms) - 1:
+                        st.markdown("---")
+                
+            for i, platform in enumerate(platforms):
+                with result_tabs[i+1]:
+                    st.caption("우측 상단의 복사 버튼(📋 아이콘)을 누르면 [{}] 원고가 줄바꿈 및 띄어쓰기 손실 없이 복사됩니다.".format(platform))
+                    st.code(parsed_contents[platform], language="markdown")
+
+        else:
+            st.info("👈 왼쪽 입력창에 정보를 입력하고 원고 생성 버튼을 누르면 이 영역에 결과가 나타납니다.")
+
+with main_tab2:
+    st.subheader("📚 저장된 히스토리 관리")
+    
+    col_refresh, _ = st.columns([2, 8])
+    with col_refresh:
+        if st.button("🔄 DB 목록 새로고침"):
+            st.session_state.saved_history = load_history_from_db()
+            st.rerun()
+
+    try:
+        current_history = load_history_from_db()
+        if not current_history:
+            st.info("저장된 원고가 없습니다. '원고 생성 및 결과' 탭에서 원고를 만든 뒤 [💾 원고 저장하기] 버튼을 눌러보세요.")
+        else:
+            with st.form("history_delete_form"):
+                delete_ids = []
+                for item in current_history:
+                    item_id = item.get("id")
+                    p_title = item.get("product_name", "무제")
